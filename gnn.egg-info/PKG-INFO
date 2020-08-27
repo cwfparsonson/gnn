@@ -1,0 +1,11 @@
+Metadata-Version: 1.2
+Name: gnn
+Version: 0.0.1
+Summary: Graph Neural Network Suite
+Home-page: https://github.com/cwfparsonson/gnn
+Author: Christopher W. F. Parsonson
+Author-email: cwfparsonson@gmail.com
+License: UNKNOWN
+Description: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >=3.7
