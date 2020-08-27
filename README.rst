@@ -1,1 +1,1 @@
-Implementation of GNN algoirthms.
+Implementation of GNNs.
