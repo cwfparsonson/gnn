@@ -16,13 +16,17 @@ class GCNLayer(Model):
         # add fully connected linear layer
         self.linear = Linear(units=out_feats)
 
-    def call(self, g, feature):
+    def call(self, g, feature, activation):
         with g.local_scope():
+            # pass messages between nodes & reduce messages
             g.ndata['h'] = feature
             g.update_all(self.message_func, self.reduce_func)
             h = g.ndata['h']
 
-            return self.linear(h)
+            # forward reduced messages through NN layer
+            h = self.linear(h, activation)
+
+            return h
 
 class GCN(Model):
     def __init__(self):
@@ -33,28 +37,19 @@ class GCN(Model):
 
     def call(self, g, features):
         # forward through 1st layer + activation func
-        x = tf.nn.relu(features=(self.layer1(g, features)))
+        x = self.layer1(g, features, activation='relu')
 
-        # forward through second layer
-        x = self.layer2(g, x)
+        # forward through second layer (but not through activation func)
+        x = self.layer2(g, x, activation=None)
 
         return x
 
-def load_cora_data():
-    data = dgl.data.citegrh.load_cora()
-    features = tf.cast(data.features, dtype='float32')
-    labels = tf.cast(data.labels, dtype='int32')
-    train_mask = tf.cast(data.train_mask, dtype='int32')
-    test_mask = tf.cast(data.test_mask, dtype='int32')
-    g = dgl.from_networkx(data.graph)
-
-    return g, features, labels, train_mask, test_mask
 
 
 if __name__ == '__main__':
     import networkx
-    import time
     import numpy as np
+    from gnn.models.tools import load_cora_data
 
     # define gnn
     model = GCN()
@@ -77,9 +72,8 @@ if __name__ == '__main__':
     for epoch in range(num_epochs):
         with tf.GradientTape() as tape:
             logits = model(g, features)
-            logp = tf.nn.log_softmax(logits, 1)
             loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.gather(params=labels, indices=train_mask),
-                                                           logits=tf.gather(params=logp, indices=train_mask))
+                                                           logits=tf.gather(params=logits, indices=train_mask))
             grads = tape.gradient(loss, model.trainable_variables)
             opt.apply_gradients(zip(grads, model.trainable_variables))
 
@@ -88,15 +82,4 @@ if __name__ == '__main__':
         
 
 
-
     
-
-    
-
-
-
-
-
-
-
-
