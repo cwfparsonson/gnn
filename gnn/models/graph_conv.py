@@ -12,39 +12,23 @@ class GCNLayer(Model):
         self.activation = activation
 
         # define the message & reduce function as usual
-        self.message_func = dgl.function.copy_src(src='h', out='m')
-        self.reduce_func = dgl.function.sum(msg='m', out='h')
+        self.gcn_message_func = dgl.function.copy_src(src='h', out='m')
+        self.gcn_reduce_func = dgl.function.sum(msg='m', out='h')
 
         # add fully connected linear layer
         self.linear = Linear(units=out_feats)
 
-    def call(self, g, feature):
+    def call(self, g, features):
         with g.local_scope():
             # pass messages between nodes & reduce messages
-            g.ndata['h'] = feature
-            g.update_all(self.message_func, self.reduce_func)
+            g.ndata['h'] = features 
+            g.update_all(self.gcn_message_func, self.gcn_reduce_func)
             h = g.ndata['h']
 
             # forward reduced messages through NN layer
             h = self.linear(h, self.activation)
 
             return h
-
-# class GCN(Model):
-    # def __init__(self):
-        # super(GCN, self).__init__()
-
-        # self.layer1 = GCNLayer(in_feats=1433, out_feats=16)
-        # self.layer2 = GCNLayer(in_feats=16, out_feats=7)
-
-    # def call(self, g, features):
-        # # forward through 1st layer + activation func
-        # x = self.layer1(g, features, activation='relu')
-
-        # # forward through second layer (but not through activation func)
-        # x = self.layer2(g, x, activation=None)
-
-        # return x
 
 
 class GCN(Model):
@@ -54,7 +38,10 @@ class GCN(Model):
     dict. Specify out_feats for each layer to specify the number of output
     features each layer should output. The model will automatically set the
     number of input features for each layer based on what is being passed into
-    the layer when called. N.B. NN must have minimum of 1 layer.
+    the layer when called. N.B. NN must have minimum of 1 layer. N.B.2. The number
+    of elements given to out_feats and activations lists should be equal and
+    will correspond to the total number of layers (input, hidden and output)
+    in the model.
 
     The final layer (the output layer) should have activation==None so that
     the model outputs logits, which may then be externally converted into 
@@ -104,7 +91,6 @@ def evaluate(model, features, labels, mask):
         if np.array_equal(indices.numpy()[i], labels.numpy()[i]):
             correct+=1
     acc = correct / len(labels)
-    # acc = tf.reduce_mean(tf.cast(indices==labels, dtype=tf.float32))
 
     return acc
 
