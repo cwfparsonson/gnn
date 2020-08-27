@@ -52,8 +52,8 @@ def load_cora_data():
     data = dgl.data.citegrh.load_cora()
     features = tf.cast(data.features, dtype='float32')
     labels = tf.cast(data.labels, dtype='int32')
-    train_mask = tf.cast(data.train_mask, dtype='int32')
-    test_mask = tf.cast(data.test_mask, dtype='int32')
+    train_mask = data.train_mask
+    test_mask = data.test_mask
     g = dgl.from_networkx(data.graph)
 
     return g, features, labels, train_mask, test_mask
