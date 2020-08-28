@@ -20,12 +20,12 @@ class GCNLayer(Model):
 
     def call(self, g, features):
         with g.local_scope():
-            # pass messages between nodes & reduce messages
+            # pass messages between nodes & reduce/aggregate messages
             g.ndata['h'] = features 
             g.update_all(self.gcn_message_func, self.gcn_reduce_func)
             h = g.ndata['h']
 
-            # forward reduced messages through NN layer
+            # forward aggregated messages through NN layer -> GNN node representation
             h = self.linear(h, self.activation)
 
             return h
@@ -97,14 +97,8 @@ def evaluate(model, features, labels, mask):
 
 
 if __name__ == '__main__':
-    import networkx
     import numpy as np
     from gnn.models.tools import load_cora_data
-
-    # define gnn model
-    layers_config = {'out_feats': [16, 7],
-                     'activations': ['relu', None]}
-    model = GCN(layers_config=layers_config)
 
     # load cora dataset
     g, features, labels, train_mask, test_mask = load_cora_data()
@@ -112,6 +106,11 @@ if __name__ == '__main__':
     # one-hot encode labels
     num_classes = int(len(np.unique(labels)))
     labels = tf.one_hot(indices=labels, depth=num_classes)
+
+    # define gnn model
+    layers_config = {'out_feats': [16, num_classes],
+                     'activations': ['relu', None]}
+    model = GCN(layers_config=layers_config)
 
     # add edges between each node and itself to preserve old node representations
     g.add_edges(g.nodes(), g.nodes())

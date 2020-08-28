@@ -11,7 +11,7 @@ class Linear(Layer):
                  bias=True):
         super(Linear, self).__init__()
          
-        self.units = units # num units in layer
+        self.units = units # num units in layer == num dims to output
         self.bias = bias # whether or not to use bias units in layer
 
     def build(self, input_shape):
