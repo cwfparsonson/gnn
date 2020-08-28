@@ -99,12 +99,16 @@ def evaluate(model, features, labels, mask):
 if __name__ == '__main__':
     import numpy as np
     from gnn.models.tools import load_data
+    import matplotlib.pyplot as plt
+
+    dataset = 'cora'
+    path_figures = '../../data/figures/'+str(dataset)+'/graph_conv/'
 
     print('Available devices:\n{}'.format(tf.config.list_physical_devices()))
     device = '/:CPU:0'
     with tf.device(device):
         # load dataset
-        g, features, labels, train_mask, val_mask, test_mask = load_data(dataset='cora')
+        g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
 
         # one-hot encode labels
         num_classes = int(len(np.unique(labels)))
@@ -122,6 +126,9 @@ if __name__ == '__main__':
         opt = tf.keras.optimizers.Adam(learning_rate=1e-2)
 
         # run training loop
+        all_loss = []
+        all_acc = []
+        all_epochs = []
         all_logits = []
         num_epochs = 50
         for epoch in range(num_epochs):
@@ -130,12 +137,28 @@ if __name__ == '__main__':
                 all_logits.append(logits)
                 loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
                                                                logits=tf.boolean_mask(tensor=logits, mask=train_mask))
+                all_loss.append(tf.keras.backend.mean(loss))
                 grads = tape.gradient(loss, model.trainable_variables)
                 opt.apply_gradients(zip(grads, model.trainable_variables))
-            acc = evaluate(model, features, labels, test_mask)
-            print('Epoch: {} | Loss: {} | Accuracy: {}'.format(epoch, tf.keras.backend.mean(loss), acc))
+            acc = evaluate(model, features, labels, val_mask)
+            all_acc.append(acc)
+            all_epochs.append(epoch)
+            print('Epoch: {} | Training loss: {} | Validation accuracy: {}'.format(epoch, tf.keras.backend.mean(loss), acc))
 
+        acc = evaluate(model, features, labels, test_mask)
+        print('Final test accuracy: {}'.format(acc))
 
+        plt.figure()
+        plt.scatter(all_epochs, all_loss)
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.savefig(path_figures + 'loss.png')
+
+        plt.figure()
+        plt.scatter(all_epochs, all_acc)
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.savefig(path_figures + 'accuracy.png')
             
 
         
