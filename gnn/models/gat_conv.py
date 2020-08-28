@@ -125,36 +125,40 @@ if __name__ == '__main__':
     import numpy as np
     from gnn.models.tools import load_data
 
-    # load dataset
-    g, features, labels, train_mask, val_mask, test_mask = load_data(dataset='cora')
+    print('Available devices:\n{}'.format(tf.config.list_physical_devices()))
+    device = '/:CPU:0'
+    with tf.device(device):
 
-    # one-hot encode labels
-    num_classes = int(len(np.unique(labels)))
-    labels = tf.one_hot(indices=labels, depth=num_classes)
+        # load dataset
+        g, features, labels, train_mask, val_mask, test_mask = load_data(dataset='cora')
 
-    # define gnn model
-    layers_config = {'out_feats': [8, num_classes],
-                     'num_heads': [2, 1],
-                     'activations': [None, None]}
-    model = GAT(layers_config=layers_config)
+        # one-hot encode labels
+        num_classes = int(len(np.unique(labels)))
+        labels = tf.one_hot(indices=labels, depth=num_classes)
 
-    # add edges between each node and itself to preserve old node representations
-    g.add_edges(g.nodes(), g.nodes())
+        # define gnn model
+        layers_config = {'out_feats': [8, num_classes],
+                         'num_heads': [2, 1],
+                         'activations': [None, None]}
+        model = GAT(layers_config=layers_config)
 
-    # define optimiser
-    opt = tf.keras.optimizers.Adam(learning_rate=1e-3)
+        # add edges between each node and itself to preserve old node representations
+        g.add_edges(g.nodes(), g.nodes())
 
-    # run training loop
-    num_epochs = 100
-    for epoch in range(num_epochs):
-        with tf.GradientTape() as tape:
-            logits = model(g, features)
-            loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
-                                                           logits=tf.boolean_mask(tensor=logits, mask=train_mask))
-            grads = tape.gradient(loss, model.trainable_variables)
-            opt.apply_gradients(zip(grads, model.trainable_variables))
-        acc = evaluate(model, features, labels, test_mask)
-        print('Epoch: {} | Loss: {} | Accuracy: {}'.format(epoch, tf.keras.backend.mean(loss), acc))
+        # define optimiser
+        opt = tf.keras.optimizers.Adam(learning_rate=1e-3)
+
+        # run training loop
+        num_epochs = 100
+        for epoch in range(num_epochs):
+            with tf.GradientTape() as tape:
+                logits = model(g, features)
+                loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
+                                                               logits=tf.boolean_mask(tensor=logits, mask=train_mask))
+                grads = tape.gradient(loss, model.trainable_variables)
+                opt.apply_gradients(zip(grads, model.trainable_variables))
+            acc = evaluate(model, features, labels, test_mask)
+            print('Epoch: {} | Loss: {} | Accuracy: {}'.format(epoch, tf.keras.backend.mean(loss), acc))
 
 
 
