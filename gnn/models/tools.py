@@ -89,6 +89,8 @@ def load_data(dataset='cora'):
         data = dgl.data.CiteseerGraphDataset()
     elif dataset == 'pubmed':
         data = dgl.data.PubmedGraphDataset()
+    elif dataset == 'reddit':
+        data = dgl.data.RedditDataset()
     else:
         raise ValueError('Unknown dataset: {}'.format(dataset))
 
