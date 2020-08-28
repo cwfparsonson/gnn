@@ -122,12 +122,11 @@ def evaluate(model, features, labels, mask):
                                                   
 
 if __name__ == '__main__':
-    from gnn.models.tools import load_cora_data
     import numpy as np
+    from gnn.models.tools import load_data
 
-
-    # load cora dataset
-    g, features, labels, train_mask, test_mask = load_cora_data()
+    # load dataset
+    g, features, labels, train_mask, val_mask, test_mask = load_data(dataset='cora')
 
     # one-hot encode labels
     num_classes = int(len(np.unique(labels)))

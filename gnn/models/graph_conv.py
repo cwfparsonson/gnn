@@ -98,10 +98,11 @@ def evaluate(model, features, labels, mask):
 
 if __name__ == '__main__':
     import numpy as np
-    from gnn.models.tools import load_cora_data
+    from gnn.models.tools import load_data
 
-    # load cora dataset
-    g, features, labels, train_mask, test_mask = load_cora_data()
+    # load dataset
+    g, features, labels, train_mask, val_mask, test_mask = load_data(dataset='cora')
+    print('Labels:\n{}'.format(labels))
 
     # one-hot encode labels
     num_classes = int(len(np.unique(labels)))
@@ -119,10 +120,12 @@ if __name__ == '__main__':
     opt = tf.keras.optimizers.Adam(learning_rate=1e-2)
 
     # run training loop
+    all_logits = []
     num_epochs = 50
     for epoch in range(num_epochs):
         with tf.GradientTape() as tape:
             logits = model(g, features)
+            all_logits.append(logits)
             loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
                                                            logits=tf.boolean_mask(tensor=logits, mask=train_mask))
             grads = tape.gradient(loss, model.trainable_variables)

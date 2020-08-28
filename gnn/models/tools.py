@@ -48,12 +48,63 @@ class Linear(Layer):
 
         return h
 
-def load_cora_data():
-    data = dgl.data.citegrh.load_cora()
-    features = tf.cast(data.features, dtype='float32')
-    labels = tf.cast(data.labels, dtype='int32')
-    train_mask = data.train_mask
-    test_mask = data.test_mask
-    g = dgl.from_networkx(data.graph)
 
-    return g, features, labels, train_mask, test_mask
+
+def load_ppi_data():
+    '''Protein-Protein Interaction network dataset.
+
+    Contains 24 graphs (22 for train, 2 for test)
+
+    Avrg nodes per graph: 2,372
+    Features per node: 121
+    Labels per node: 121
+
+    '''
+    data = dgl.data.PPIDataset()
+    for g in data:
+        features = tf.cast(g.ndata['feat'], dtype='float32')
+        labels = tf.cast(g.ndata['label'], dtype='int32')
+        train_mask = [True for _ in range(22)] + [False for _ in range(2)]
+        test_mask = [False for _ in range(22)] + [True for _ in range(2)]
+
+    graphs = data[0]
+
+    return graphs, features, labels, train_mask, test_mask
+
+
+def unpack_dataset(dataset):
+    graph = dataset[0]
+    features = graph.ndata['feat']
+    labels = graph.ndata['label']
+    train_mask = graph.ndata['train_mask']
+    val_mask = graph.ndata['val_mask']
+    test_mask = graph.ndata['test_mask']
+
+    return graph, features, labels, train_mask, val_mask, test_mask
+
+def load_data(dataset='cora'):
+    if dataset == 'cora':
+        data = dgl.data.CoraGraphDataset()
+    elif dataset == 'citeseer':
+        data = dgl.data.CiteseerGraphDataset()
+    elif dataset == 'pubmed':
+        data = dgl.data.PubmedGraphDataset()
+    else:
+        raise ValueError('Unknown dataset: {}'.format(dataset))
+
+    return unpack_dataset(data)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
