@@ -100,9 +100,8 @@ if __name__ == '__main__':
     import numpy as np
     from gnn.models.tools import load_data
 
-    # load dataset
-    g, features, labels, train_mask, val_mask, test_mask = load_data(dataset='cora')
-    print('Labels:\n{}'.format(labels))
+    # load cora dataset
+    g, features, labels, train_mask, test_mask = load_cora_data()
 
     # one-hot encode labels
     num_classes = int(len(np.unique(labels)))
