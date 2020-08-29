@@ -16,9 +16,9 @@ class TensorboardWriter:
         self.METRIC_TRAINING_LOSS = 'training_loss'
         self.METRIC_VALIDATION_ACCURACY = 'validation_accuracy'
 
-        self.init_dir()
+        self._init_dir()
 
-    def init_dir(self):
+    def _init_dir(self):
         try:
             os.mkdir(self.logs_dir)
         except FileNotFoundError:

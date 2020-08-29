@@ -8,6 +8,7 @@ if __name__ == '__main__':
 
     dataset = 'cora'
     logs_dir = '../../data/logs/hparam_tuning/'
+    model = GCN
 
     # load dataset
     g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
@@ -18,7 +19,7 @@ if __name__ == '__main__':
                  'val_mask': val_mask,
                  'test_mask': test_mask}
 
-    # hyperparams
+    # set hyperparams to trial
     HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([8, 16, 32]))
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
     HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.001,0.01,0.1,0.2]))
@@ -43,7 +44,7 @@ if __name__ == '__main__':
                     print('Starting trial: {}'.format(run_name))
                     start = time.time()
                     print({h.name: hparams[h] for h in hparams})
-                    tboard.run(logs_dir + run_name, GCN, hparams, data_dict)
+                    tboard.run(logs_dir + run_name, model, hparams, data_dict)
                     end = time.time()
                     print('Finished trial in {} s'.format(end-start))
                     session_num += 1
