@@ -4,6 +4,7 @@ from tensorboard.plugins.hparams import api as hp
 import numpy as np
 import os
 import shutil
+import copy
 
 class TensorboardWriter:
     def __init__(self, logs_dir, hparams, overwrite=False):
@@ -129,6 +130,7 @@ class TensorboardWriter:
         return acc
 
     def run(self, run_dir, Model, hparams, data_dict):
+        data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(hparams) # record hparams used in this run
             accuracy = self.train_test_model(Model,
