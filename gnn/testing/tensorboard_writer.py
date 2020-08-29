@@ -1,4 +1,3 @@
-from gnn.models.graph_conv import GCN, evaluate
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import numpy as np
