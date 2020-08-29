@@ -2,7 +2,7 @@ if __name__ == '__main__':
     import tensorflow as tf
     from tensorboard.plugins.hparams import api as hp
     from gnn.models.tools import load_data
-    from gnn.models.graph_conv import GCN
+    from gnn.models.models import GCN, GAT
     from gnn.testing.tensorboard_writer import TensorboardWriter
     import time
 
@@ -20,10 +20,10 @@ if __name__ == '__main__':
                  'test_mask': test_mask}
 
     # set hyperparams to trial
-    HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([8, 16, 32]))
+    HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([32]))
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
-    HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.001,0.01,0.1,0.2]))
-    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([100, 150]))
+    HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.001]))
+    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([300, 400, 500]))
     hparams = [HP_NUM_UNITS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_NUM_EPOCHS]
 
     # init tensorboard
