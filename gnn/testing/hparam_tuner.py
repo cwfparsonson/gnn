@@ -25,7 +25,7 @@ if __name__ == '__main__':
     HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([16, 32])) #32
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
     HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.001, 0.0001])) #0.001
-    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([300, 600])) #300
+    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([300, 600, 1200])) #300
     hparams = [HP_NUM_UNITS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_NUM_EPOCHS]
 
     # init tensorboard
