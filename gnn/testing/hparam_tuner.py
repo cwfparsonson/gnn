@@ -6,9 +6,11 @@ if __name__ == '__main__':
     from gnn.testing.tensorboard_writer import TensorboardWriter
     import time
 
+    # config
     dataset = 'cora'
     logs_dir = '../../data/logs/hparam_tuning/'
     model = GCN
+    num_repeats = 3 
 
     # load dataset
     g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
@@ -20,10 +22,10 @@ if __name__ == '__main__':
                  'test_mask': test_mask}
 
     # set hyperparams to trial
-    HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([32]))
+    HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([16, 32])) #32
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
-    HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.001]))
-    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([300, 400, 500]))
+    HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.001, 0.0001])) #0.001
+    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([300, 600])) #300
     hparams = [HP_NUM_UNITS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_NUM_EPOCHS]
 
     # init tensorboard
@@ -41,10 +43,10 @@ if __name__ == '__main__':
                                HP_LEARNING_RATE: learning_rate,
                                HP_NUM_EPOCHS: num_epochs,}
                     run_name = 'run_'+str(session_num)
-                    print('Starting trial: {}'.format(run_name))
+                    print('Starting trial: {} ({} repeats)'.format(run_name, num_repeats))
                     start = time.time()
                     print({h.name: hparams[h] for h in hparams})
-                    tboard.run(logs_dir + run_name, model, hparams, data_dict)
+                    tboard.run(logs_dir + run_name, model, hparams, data_dict, num_repeats=num_repeats)
                     end = time.time()
                     print('Finished trial in {} s'.format(end-start))
                     session_num += 1

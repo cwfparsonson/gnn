@@ -13,6 +13,7 @@ class TensorboardWriter:
         self.hparams = hparams
 
         self.METRIC_TEST_ACCURACY = 'test_accuracy'
+        self.METRIC_TEST_ACCURACY_UNCERTAINTY = 'test_accuracy_uncertainty'
         self.METRIC_TRAINING_LOSS = 'training_loss'
         self.METRIC_VALIDATION_ACCURACY = 'validation_accuracy'
 
@@ -37,20 +38,22 @@ class TensorboardWriter:
         with tf.summary.create_file_writer(self.logs_dir).as_default():
             hp.hparams_config(hparams=self.hparams,
                               metrics=[hp.Metric(self.METRIC_TEST_ACCURACY, display_name='Test Accuracy'),
+                                       hp.Metric(self.METRIC_TEST_ACCURACY_UNCERTAINTY, display_name='Test Accuracy Uncertainty'),
                                        hp.Metric(self.METRIC_TRAINING_LOSS, display_name='Training Loss'),
                                        hp.Metric(self.METRIC_VALIDATION_ACCURACY, display_name='Validation Accuracy')])
 
 
-    def train_test_model(self,
-                         run_dir,
-                         Model,
-                         udf_hparams,
-                         g,
-                         features,
-                         labels,
-                         train_mask,
-                         val_mask,
-                         test_mask):
+    def _train_test_model(self,
+                          run_dir,
+                          Model,
+                          udf_hparams,
+                          g,
+                          features,
+                          labels,
+                          train_mask,
+                          val_mask,
+                          test_mask,
+                          num_repeats=1):
         '''Runs a training loop given user-defined hyperparameters & performs test.
 
         Possible user defined hparam keys:
@@ -103,61 +106,98 @@ class TensorboardWriter:
             else:
                 raise Exception('Unrecognised hyperparameter defined in hparams.')
 
+        # one-hot encode labels
+        num_classes = int(len(np.unique(labels)))
+        labels = tf.one_hot(indices=labels, depth=num_classes)
+
+        # define gnn model
+        layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
+                         'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
+
+        # add edges between each node and itself to preserve old node representations
+        g.add_edges(g.nodes(), g.nodes())
+
+        # define optimiser
+        if hparams[HP_OPTIMIZER] == 'adam':
+            opt = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LEARNING_RATE])
+        else:
+            opt = tf.keras.optimizers.SGD(learning_rate=hparams[HP_LEARNING_RATE])
+
         # init physical device(s)
         device = '/:CPU:0'
         with tf.device(device):
 
-            # one-hot encode labels
-            num_classes = int(len(np.unique(labels)))
-            labels = tf.one_hot(indices=labels, depth=num_classes)
+            # init trackers
+            all_test_accuracy = []
+            all_training_loss = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
+            all_validation_accuracy = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
 
-            # define gnn model
-            layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
-                             'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
-            model = Model(layers_config=layers_config)
+            for _ in range(num_repeats):
+                model = Model(layers_config=layers_config)
 
-            # add edges between each node and itself to preserve old node representations
-            g.add_edges(g.nodes(), g.nodes())
+                # run training loop
+                for epoch in range(hparams[HP_NUM_EPOCHS]):
+                    with tf.GradientTape() as tape:
+                        logits = model(g, features)
+                        loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
+                                                                       logits=tf.boolean_mask(tensor=logits, mask=train_mask))
+                        all_training_loss[epoch].append(tf.math.reduce_mean(loss))
+                        grads = tape.gradient(loss, model.trainable_variables)
+                        opt.apply_gradients(zip(grads, model.trainable_variables))
+                        acc = evaluate(model, g, features, labels, val_mask)
+                        all_validation_accuracy[epoch].append(tf.math.reduce_mean(acc))
+                # run test
+                acc = evaluate(model, g, features, labels, test_mask)
+                all_test_accuracy.append(acc)
 
-            # define optimiser
-            if hparams[HP_OPTIMIZER] == 'adam':
-                opt = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LEARNING_RATE])
-            else:
-                opt = tf.keras.optimizers.SGD(learning_rate=hparams[HP_LEARNING_RATE])
+        # summarise
+        # training loss & validation
+        for epoch in range(hparams[HP_NUM_EPOCHS]):
+            loss = np.mean(np.array(all_training_loss[epoch]))
+            acc = np.mean(np.array(all_validation_accuracy[epoch]))
+            with tf.summary.create_file_writer(run_dir).as_default():
+                tf.summary.scalar(self.METRIC_TRAINING_LOSS, data=loss, step=epoch)
+                tf.summary.scalar(self.METRIC_VALIDATION_ACCURACY, data=acc, step=epoch)
+        # test
+        mean_accuracy = np.mean(np.array(all_test_accuracy))
+        if num_repeats > 1:
+            uncertainty = (np.max(np.array(all_test_accuracy)) - np.min(np.array(all_test_accuracy))) / 2
+        else:
+            uncertainty = 0
 
-            # train
-            for epoch in range(hparams[HP_NUM_EPOCHS]):
-                with tf.GradientTape() as tape:
-                    logits = model(g, features)
-                    loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
-                                                                   logits=tf.boolean_mask(tensor=logits, mask=train_mask))
-                    grads = tape.gradient(loss, model.trainable_variables)
-                    opt.apply_gradients(zip(grads, model.trainable_variables))
-                    acc = evaluate(model, g, features, labels, val_mask)
-                with tf.summary.create_file_writer(run_dir).as_default():
-                    tf.summary.scalar(self.METRIC_TRAINING_LOSS, data=tf.math.reduce_mean(loss), step=epoch)
-                    tf.summary.scalar(self.METRIC_VALIDATION_ACCURACY, data=tf.math.reduce_mean(acc), step=epoch)
+        return mean_accuracy, uncertainty 
 
-            # test
-            acc = evaluate(model, g, features, labels, test_mask)
 
-        return acc
+    def run(self, run_dir, Model, hparams, data_dict, num_repeats=1):
+        '''Trains and tests model with given hparams and tracks with tensorboard.
 
-    def run(self, run_dir, Model, hparams, data_dict):
+        Args:
+            run_dir (str): Directory to where to save logs + name of this run.
+            Model (obj): GNN model to train and test.
+            hparams (dict): User-defined hyperparameters to use.
+            data_dict (dict): Data for training, validation, and testing.
+            num_repeats (int): Number of times to repeat training and testing
+                (will return the average accuracy and the uncertainty in the
+                accuracy value).
+
+        '''
         data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(hparams) # record hparams used in this run
-            accuracy = self.train_test_model(run_dir, 
-                                             Model,
-                                             hparams, 
-                                             g=data_dict['graph'],
-                                             features=data_dict['features'],
-                                             labels=data_dict['labels'],
-                                             train_mask=data_dict['train_mask'],
-                                             val_mask=data_dict['val_mask'],
-                                             test_mask=data_dict['test_mask'])
+            accuracy, uncertainty = self._train_test_model(run_dir, 
+                                                           Model,
+                                                           hparams, 
+                                                           g=data_dict['graph'],
+                                                           features=data_dict['features'],
+                                                           labels=data_dict['labels'],
+                                                           train_mask=data_dict['train_mask'],
+                                                           val_mask=data_dict['val_mask'],
+                                                           test_mask=data_dict['test_mask'],
+                                                           num_repeats=num_repeats)
+
         with tf.summary.create_file_writer(run_dir).as_default():
             tf.summary.scalar(self.METRIC_TEST_ACCURACY, data=accuracy, step=1)
+            tf.summary.scalar(self.METRIC_TEST_ACCURACY_UNCERTAINTY, data=uncertainty, step=1)
 
 
 
