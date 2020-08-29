@@ -1,3 +1,4 @@
+import numpy as np
 import dgl
 import tensorflow as tf
 from tensorflow.keras.models import Model
@@ -80,7 +81,7 @@ class GCN(Model):
 
         return h
 
-def evaluate(model, features, labels, mask):
+def evaluate(model, g, features, labels, mask):
     logits = model(g, features)
     logits = tf.boolean_mask(tensor=logits, mask=mask)
     labels = tf.boolean_mask(tensor=labels, mask=mask)
@@ -140,7 +141,7 @@ if __name__ == '__main__':
                 all_loss.append(tf.keras.backend.mean(loss))
                 grads = tape.gradient(loss, model.trainable_variables)
                 opt.apply_gradients(zip(grads, model.trainable_variables))
-            acc = evaluate(model, features, labels, val_mask)
+            acc = evaluate(model, g, features, labels, val_mask)
             all_acc.append(acc)
             all_epochs.append(epoch)
             print('Epoch: {} | Training loss: {} | Validation accuracy: {}'.format(epoch, tf.keras.backend.mean(loss), acc))
@@ -151,13 +152,13 @@ if __name__ == '__main__':
         plt.figure()
         plt.scatter(all_epochs, all_loss)
         plt.xlabel('Epoch')
-        plt.ylabel('Loss')
+        plt.ylabel('Training Loss')
         plt.savefig(path_figures + 'loss.png')
 
         plt.figure()
         plt.scatter(all_epochs, all_acc)
         plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
+        plt.ylabel('Validation Accuracy')
         plt.savefig(path_figures + 'accuracy.png')
             
 

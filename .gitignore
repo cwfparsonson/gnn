@@ -2,3 +2,6 @@
 *.jpeg
 *.jpg
 *.mp4
+
+logs/
+figures/
