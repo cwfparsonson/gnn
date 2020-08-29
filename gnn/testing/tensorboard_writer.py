@@ -38,6 +38,7 @@ class TensorboardWriter:
 
 
     def train_test_model(self,
+                         run_dir,
                          Model,
                          udf_hparams,
                          g,
@@ -128,6 +129,10 @@ class TensorboardWriter:
                                                                    logits=tf.boolean_mask(tensor=logits, mask=train_mask))
                     grads = tape.gradient(loss, model.trainable_variables)
                     opt.apply_gradients(zip(grads, model.trainable_variables))
+                    acc = evaluate(model, g, features, labels, val_mask)
+                with tf.summary.create_file_writer(run_dir).as_default():
+                    tf.summary.scalar('Training Loss', data=tf.math.reduce_mean(loss), step=epoch)
+                    tf.summary.scalar('Validation Accuracy', data=tf.math.reduce_mean(acc), step=epoch)
 
             # test
             acc = evaluate(model, g, features, labels, test_mask)
@@ -138,7 +143,8 @@ class TensorboardWriter:
         data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(hparams) # record hparams used in this run
-            accuracy = self.train_test_model(Model,
+            accuracy = self.train_test_model(run_dir, 
+                                             Model,
                                              hparams, 
                                              g=data_dict['graph'],
                                              features=data_dict['features'],
@@ -146,7 +152,7 @@ class TensorboardWriter:
                                              train_mask=data_dict['train_mask'],
                                              val_mask=data_dict['val_mask'],
                                              test_mask=data_dict['test_mask'])
-            tf.summary.scalar(self.METRIC_ACCURACY, accuracy, step=1)
+            tf.summary.scalar(self.METRIC_ACCURACY, data=accuracy, step=1)
 
 
 
