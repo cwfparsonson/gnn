@@ -28,6 +28,7 @@ if __name__ == '__main__':
     # init tensorboard
     tboard = TensorboardWriter(logs_dir, hparams, overwrite=True)
 
+    # trial each combination of hyperparams
     session_num = 0
     started = time.time()
     for num_units in HP_NUM_UNITS.domain.values:

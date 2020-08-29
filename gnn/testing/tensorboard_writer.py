@@ -12,7 +12,9 @@ class TensorboardWriter:
         self.overwrite = overwrite
         self.hparams = hparams
 
-        self.METRIC_ACCURACY = 'accuracy'
+        self.METRIC_TEST_ACCURACY = 'test_accuracy'
+        self.METRIC_TRAINING_LOSS = 'training_loss'
+        self.METRIC_VALIDATION_ACCURACY = 'validation_accuracy'
 
         self.init_dir()
 
@@ -34,7 +36,9 @@ class TensorboardWriter:
 
         with tf.summary.create_file_writer(self.logs_dir).as_default():
             hp.hparams_config(hparams=self.hparams,
-                              metrics=[hp.Metric(self.METRIC_ACCURACY, display_name='Accuracy')])
+                              metrics=[hp.Metric(self.METRIC_TEST_ACCURACY, display_name='Test Accuracy'),
+                                       hp.Metric(self.METRIC_TRAINING_LOSS, display_name='Training Loss'),
+                                       hp.Metric(self.METRIC_VALIDATION_ACCURACY, display_name='Validation Accuracy')])
 
 
     def train_test_model(self,
@@ -131,8 +135,8 @@ class TensorboardWriter:
                     opt.apply_gradients(zip(grads, model.trainable_variables))
                     acc = evaluate(model, g, features, labels, val_mask)
                 with tf.summary.create_file_writer(run_dir).as_default():
-                    tf.summary.scalar('Training Loss', data=tf.math.reduce_mean(loss), step=epoch)
-                    tf.summary.scalar('Validation Accuracy', data=tf.math.reduce_mean(acc), step=epoch)
+                    tf.summary.scalar(self.METRIC_TRAINING_LOSS, data=tf.math.reduce_mean(loss), step=epoch)
+                    tf.summary.scalar(self.METRIC_VALIDATION_ACCURACY, data=tf.math.reduce_mean(acc), step=epoch)
 
             # test
             acc = evaluate(model, g, features, labels, test_mask)
@@ -152,7 +156,9 @@ class TensorboardWriter:
                                              train_mask=data_dict['train_mask'],
                                              val_mask=data_dict['val_mask'],
                                              test_mask=data_dict['test_mask'])
-            tf.summary.scalar(self.METRIC_ACCURACY, data=accuracy, step=1)
+        with tf.summary.create_file_writer(run_dir).as_default():
+            tf.summary.scalar(self.METRIC_TEST_ACCURACY, data=accuracy, step=1)
+
 
 
 
