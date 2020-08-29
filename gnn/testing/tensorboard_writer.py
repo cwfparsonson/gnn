@@ -53,6 +53,7 @@ class TensorboardWriter:
             - HP_NUM_UNITS (name='num_units')
             - HP_NUM_LAYERS (name='num_layers')
             - HP_OPTIMIZER (name='optimizer')
+            - HP_LEARNING_RATE (name='learning_rate')
             - HP_NUM_EPOCHS (name='num_epochs')
 
         '''
@@ -60,10 +61,12 @@ class TensorboardWriter:
         HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([16]))
         HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1]))
         HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
+        HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.01]))
         HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([50]))
         default_hparams = {HP_NUM_UNITS: HP_NUM_UNITS.domain.values[0],
                            HP_NUM_LAYERS: HP_NUM_LAYERS.domain.values[0],        
                            HP_OPTIMIZER: HP_OPTIMIZER.domain.values[0],
+                           HP_LEARNING_RATE: HP_LEARNING_RATE.domain.values[0],
                            HP_NUM_EPOCHS: HP_NUM_EPOCHS.domain.values[0],}
 
         # enter user defined hparams
@@ -88,6 +91,8 @@ class TensorboardWriter:
                 HP_NUM_LAYERS = key
             elif key.name == 'optimizer':
                 HP_OPTIMIZER = key
+            elif key.name == 'learning_rate':
+                HP_LEARNING_RATE = key
             elif key.name == 'num_epochs':
                 HP_NUM_EPOCHS = key
             else:
@@ -111,9 +116,9 @@ class TensorboardWriter:
 
             # define optimiser
             if hparams[HP_OPTIMIZER] == 'adam':
-                opt = tf.keras.optimizers.Adam(learning_rate=1e-2)
+                opt = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LEARNING_RATE])
             else:
-                opt = tf.keras.optimizers.SGD(learning_rate=1e-2)
+                opt = tf.keras.optimizers.SGD(learning_rate=hparams[HP_LEARNING_RATE])
 
             # train
             for epoch in range(hparams[HP_NUM_EPOCHS]):
