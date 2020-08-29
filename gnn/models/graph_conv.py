@@ -1,8 +1,7 @@
-import numpy as np
 import dgl
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from gnn.models.tools import Linear 
+from gnn.models.tools import Linear, evaluate
 
 
 
@@ -81,19 +80,6 @@ class GCN(Model):
 
         return h
 
-def evaluate(model, g, features, labels, mask):
-    logits = model(g, features)
-    logits = tf.boolean_mask(tensor=logits, mask=mask)
-    labels = tf.boolean_mask(tensor=labels, mask=mask)
-    indices = tf.math.argmax(logits, axis=1)
-    indices = tf.one_hot(indices=indices, depth=len(labels[0]))
-    correct = 0
-    for i in range(len(labels)):
-        if np.array_equal(indices.numpy()[i], labels.numpy()[i]):
-            correct+=1
-    acc = correct / len(labels)
-
-    return acc
 
 
 
