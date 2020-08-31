@@ -1,3 +1,5 @@
+import dgl
+import math
 from gnn.models.graph_conv import evaluate
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
@@ -58,24 +60,36 @@ class TensorboardWriter:
 
         Possible user defined hparam keys:
 
-            - HP_NUM_UNITS (name='num_units')
-            - HP_NUM_LAYERS (name='num_layers')
+            - HP_NUM_UNITS (name='num_units') 
+            - HP_NUM_LAYERS (name='num_layers') # also translates to number of hops to do away from node when sampling neighbours
             - HP_OPTIMIZER (name='optimizer')
             - HP_LEARNING_RATE (name='learning_rate')
             - HP_NUM_EPOCHS (name='num_epochs')
+            - HP_SHUFFLE (name='shuffle') # bool (whether or not to shuffle data)
+            - HP_SAMPLE (name='sample') # bool (whether or not to sample)
+            - HP_BATCH_SIZE (name='batch_size') # must have HP_SAMPLE==True to take effect
+            - HP_NUM_NEIGHBOURS (name='num_neighbours') # no. neighbours to sample for each gnn layer https://docs.dgl.ai/en/0.5.x/api/python/dgl.dataloading.html#neighbor-sampler # must have HP_SAMPLE==True to take effect
 
         '''
         # define default hyperparameters
-        HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([16]))
-        HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1]))
+        HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([32])) # units per layer
+        HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1])) # num layers (+=1 since always have output layer)
         HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
-        HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.01]))
-        HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([50]))
+        HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001]))
+        HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([600]))
+        HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True]))
+        HP_SAMPLE = hp.HParam('sample', hp.Discrete([True]))
+        HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) 
+        HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4])) # default to 0, which samples all neighbours for each hop/layer
         default_hparams = {HP_NUM_UNITS: HP_NUM_UNITS.domain.values[0],
                            HP_NUM_LAYERS: HP_NUM_LAYERS.domain.values[0],        
                            HP_OPTIMIZER: HP_OPTIMIZER.domain.values[0],
                            HP_LEARNING_RATE: HP_LEARNING_RATE.domain.values[0],
-                           HP_NUM_EPOCHS: HP_NUM_EPOCHS.domain.values[0],}
+                           HP_NUM_EPOCHS: HP_NUM_EPOCHS.domain.values[0],
+                           HP_SHUFFLE: HP_SHUFFLE.domain.values[0],
+                           HP_SAMPLE: HP_SAMPLE.domain.values[0],
+                           HP_BATCH_SIZE: HP_BATCH_SIZE.domain.values[0],
+                           HP_NUM_NEIGHBOURS: HP_NUM_NEIGHBOURS.domain.values[0],}
 
         # enter user defined hparams
         hparams = {}
@@ -91,6 +105,11 @@ class TensorboardWriter:
             if key.name not in [k.name for k in hparams]:
                 raise Exception('hparam key {} name is invalid. Accepted hparam key names:\n{}'.format(key, [k.name for k in default_hparams]))
 
+        if hparams[HP_SAMPLE]:
+            mode = 'sampling'
+        else:
+            mode = 'no_sampling'
+
         # reconfigure hyperparameters for this run
         for key in hparams:
             if key.name == 'num_units':
@@ -103,12 +122,24 @@ class TensorboardWriter:
                 HP_LEARNING_RATE = key
             elif key.name == 'num_epochs':
                 HP_NUM_EPOCHS = key
+            elif key.name == 'shuffle':
+                HP_SHUFFLE = key
+            elif key.name == 'sample':
+                HP_SAMPLE = key
+            elif key.name == 'batch_size':
+                HP_BATCH_SIZE = key
+            elif key.name == 'num_neighbours':
+                HP_NUM_NEIGHBOURS = key
             else:
                 raise Exception('Unrecognised hyperparameter defined in hparams.')
 
         # one-hot encode labels
-        num_classes = int(len(np.unique(labels)))
-        labels = tf.one_hot(indices=labels, depth=num_classes)
+        unique_labels = np.unique(labels)
+        num_classes = len(unique_labels)
+        onehot_labels = tf.one_hot(indices=labels, depth=num_classes)
+        unique_onehot_labels = np.unique(onehot_labels, axis=0)
+        label_to_onehot = {label: onehot for label, onehot in zip(unique_labels, unique_onehot_labels)}
+        labels = tf.cast([label_to_onehot[l] for l in labels.numpy()], dtype=tf.int64) # convert to onehot
 
         # define gnn model
         layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
@@ -132,25 +163,100 @@ class TensorboardWriter:
             all_training_loss = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
             all_validation_accuracy = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
 
+
+            # repeat training loops to get uncertainty
             for _ in range(num_repeats):
+                # init model
                 model = Model(layers_config=layers_config)
 
-                # run training loop
+                # configure shuffling
+                if hparams[HP_SHUFFLE]:
+                    shuffle_mask = tf.random.shuffle(tf.cast([i for i in range(len(train_mask))], dtype=tf.int64))
+                    train_mask = tf.gather(params=train_mask, indices=shuffle_mask)
+                    val_mask = tf.gather(params=val_mask, indices=shuffle_mask)
+                    test_mask = tf.gather(params=test_mask, indices=shuffle_mask)
+                else:
+                    pass
+
+                # init seed node ids
+                node_ids = g.nodes()
+                index = 0
+                train_nids = []
+                for m in train_mask:
+                    if m:
+                        train_nids.append(node_ids[index])
+                    else:
+                        pass
+                    index += 1
+                index = 0
+                val_nids = []
+                for m in val_mask:
+                    if m:
+                        val_nids.append(node_ids[index])
+                    else:
+                        pass
+                    index += 1
+
+                # configure sampling
+                if mode == 'sampling':
+                    if hparams[HP_NUM_NEIGHBOURS] != 0:
+                        fanouts = [hparams[HP_NUM_NEIGHBOURS] for _ in range(model.num_layers)] # sampling fixed num neighbour nodes each layer
+                    else:
+                        fanouts = [None for _ in range(model.num_layers)] # sample all neighbours
+
+                    num_batches = math.ceil(int(len(train_nids)/hparams[HP_BATCH_SIZE]))
+                    train_mini_batches = []
+                    prev_index = 0
+                    index = copy.deepcopy(hparams[HP_BATCH_SIZE])
+                    for batch_num in range(num_batches):
+                        train_mini_batches.append(train_nids[prev_index:index])
+                        prev_index = copy.deepcopy(index)
+                        index += hparams[HP_BATCH_SIZE]
+
+                    sampler = dgl.dataloading.MultiLayerNeighborSampler(fanouts=fanouts, replace=False)
+                    collator = dgl.dataloading.NodeCollator(g, train_nids, sampler)
+
+                else:
+                    pass
+
+
+                # begin training loop
                 for epoch in range(hparams[HP_NUM_EPOCHS]):
-                    with tf.GradientTape() as tape:
-                        logits = model(g, features)
-                        loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
-                                                                       logits=tf.boolean_mask(tensor=logits, mask=train_mask))
-                        all_training_loss[epoch].append(tf.math.reduce_mean(loss))
-                        grads = tape.gradient(loss, model.trainable_variables)
-                        opt.apply_gradients(zip(grads, model.trainable_variables))
-                        acc = evaluate(model, g, features, labels, val_mask)
-                        all_validation_accuracy[epoch].append(tf.math.reduce_mean(acc))
-                # run test
+                    epoch_loss = []
+                    if mode == 'sampling':
+                        for batch_nodes in train_mini_batches:
+                            with tf.GradientTape() as tape:
+                                input_nodes, output_nodes, blocks = collator.collate(batch_nodes)
+                                input_features = blocks[0].srcdata['feat']
+                                output_labels = blocks[-1].dstdata['label']
+                                onehot_output_labels = tf.cast([label_to_onehot[l] for l in output_labels.numpy()],dtype=tf.int64)
+                                logits = model(blocks, input_features, mode=mode)
+                                loss = tf.nn.softmax_cross_entropy_with_logits(labels=onehot_output_labels, logits=logits)
+                                epoch_loss.append(tf.math.reduce_mean(loss))
+                                grads = tape.gradient(loss, model.trainable_variables)
+                                opt.apply_gradients(zip(grads, model.trainable_variables))
+                    else:
+                        with tf.GradientTape() as tape:
+                            logits = model(g, features, mode=mode)
+                            loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
+                                                                           logits=tf.boolean_mask(tensor=logits, mask=train_mask))
+                            epoch_loss.append(tf.math.reduce_mean(loss))
+                            grads = tape.gradient(loss, model.trainable_variables)
+                            opt.apply_gradients(zip(grads, model.trainable_variables))
+
+                    # validation testing
+                    epoch_acc = evaluate(model, g, features, labels, val_nids)
+
+                    # summarise epoch
+                    epoch_loss = np.mean(np.array(epoch_loss))
+                    all_training_loss[epoch].append(epoch_loss)
+                    all_validation_accuracy[epoch].append(tf.math.reduce_mean(epoch_acc))
+
+                # test fully trained model
                 acc = evaluate(model, g, features, labels, test_mask)
                 all_test_accuracy.append(acc)
 
-        # summarise
+        # summarise run
         # training loss & validation
         for epoch in range(hparams[HP_NUM_EPOCHS]):
             loss = np.mean(np.array(all_training_loss[epoch]))

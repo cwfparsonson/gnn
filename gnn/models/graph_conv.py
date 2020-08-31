@@ -18,17 +18,43 @@ class GCNLayer(Model):
         # add fully connected linear layer
         self.linear = Linear(units=out_feats)
 
-    def call(self, g, features):
-        with g.local_scope():
-            # pass messages between nodes & reduce/aggregate messages
-            g.ndata['h'] = features 
-            g.update_all(self.gcn_message_func, self.gcn_reduce_func)
-            h = g.ndata['h']
+    def call(self, g, features, mode):
 
-            # forward aggregated messages through NN layer -> GNN node representation
-            h = self.linear(h, self.activation)
 
-            return h
+
+        if mode == 'no_sampling':
+            with g.local_scope():
+                # enter node features
+                g.ndata['h'] = features 
+
+                # pass messages between nodes & reduce/aggregate messages
+                g.update_all(self.gcn_message_func, self.gcn_reduce_func)
+                h = g.ndata['h']
+
+                # forward aggregated messages through NN layer -> GNN node representation
+                h = self.linear(h, self.activation)
+
+                return h
+
+        elif mode == 'sampling':
+            block = g
+            with block.local_scope():
+                # enter node features
+                h_src = features
+                h_dst = features[:block.number_of_dst_nodes()]
+                block.srcdata['h'] = h_src
+                block.dstdata['h'] = h_dst
+                
+                # pass messages between nodes & reduce/aggregate message
+                block.update_all(self.gcn_message_func, self.gcn_reduce_func)
+                h = block.dstdata['h']
+
+                # forward aggregated messages through NN layer -> GNN node representation
+                h = self.linear(h, self.activation)
+
+                return h
+                
+
 
 
 class GCN(Model):
@@ -72,11 +98,27 @@ class GCN(Model):
             self._layers.append(GCNLayer(out_feats=layers_config['out_feats'][i],
                                         activation=layers_config['activations'][i]))
 
-    def call(self, g, features):
+        self.num_layers = len(self._layers)
+
+    def call(self, g, features, mode='no_sampling'):
         '''Forward graph node features through GNN, generating hidden feature representations.'''
+        if mode == 'sampling' and len(g) != len(self._layers):
+            raise Exception('Number of blocks must ({}) must == number of GNN layers ({}).'.format(len(g),len(self._layers)))
+        if type(g) == list and mode == 'no_sampling':
+            raise Exception('Specified mode as no_sampling but providing list of blocks. Set mode=\'sampling\' or provide whole graph.')
+        elif type(g) != list and mode == 'sampling':
+            raise Exception('Specified mode as sampling but not providing list of blocks. Set mode=\'no_sampling\' or provide list of blocks.')
+
         h = features
-        for layer in self._layers:
-            h = layer(g, h)
+        if mode == 'no_sampling':
+            for layer in self._layers:
+                h = layer(g, h, mode=mode)
+        elif mode == 'sampling':
+            blocks = iter(g)
+            for layer in self._layers:
+                h = layer(next(blocks), h, mode=mode)
+        else:
+            raise Exception('Unrecognised mode: {}'.format(mode))
 
         return h
 

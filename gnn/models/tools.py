@@ -51,9 +51,13 @@ class Linear(Layer):
 
 
 def evaluate(model, g, features, labels, mask):
-    logits = model(g, features)
-    logits = tf.boolean_mask(tensor=logits, mask=mask)
-    labels = tf.boolean_mask(tensor=labels, mask=mask)
+    logits = model(g, features, mode='no_sampling')
+    if type(mask[0].numpy()) == np.bool_:
+        logits = tf.boolean_mask(tensor=logits, mask=mask)
+        labels = tf.boolean_mask(tensor=labels, mask=mask)
+    else:
+        logits = tf.gather(logits, mask)
+        labels = tf.gather(labels, mask)
     indices = tf.math.argmax(logits, axis=1)
     indices = tf.one_hot(indices=indices, depth=len(labels[0]))
     correct = 0
