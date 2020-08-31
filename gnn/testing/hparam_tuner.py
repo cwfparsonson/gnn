@@ -9,7 +9,7 @@ if __name__ == '__main__':
     dataset = 'cora'
     logs_dir = '../../data/logs/hparam_tuning/'
     model = GCN
-    num_repeats = 10 # num times to repeat each trial to get uncertainty value
+    num_repeats = 3 # num times to repeat each trial to get uncertainty value
 
     # load dataset
     g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
