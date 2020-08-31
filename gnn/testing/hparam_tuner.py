@@ -9,7 +9,7 @@ if __name__ == '__main__':
     dataset = 'cora'
     logs_dir = '../../data/logs/hparam_tuning/'
     model = GCN
-    num_repeats = 3 # num times to repeat each trial to get uncertainty value
+    num_repeats = 1 # num times to repeat each trial to get uncertainty value
 
     # load dataset
     g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
@@ -25,7 +25,7 @@ if __name__ == '__main__':
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
     HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001])) #0.001
     HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([600])) #300
-    HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True, False])) 
+    HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True])) 
     HP_SAMPLE = hp.HParam('sample', hp.Discrete([True])) 
     HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) 
     HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4])) 

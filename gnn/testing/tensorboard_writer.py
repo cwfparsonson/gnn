@@ -163,10 +163,25 @@ class TensorboardWriter:
             all_training_loss = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
             all_validation_accuracy = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
 
+
+            # get node ids
+            node_ids = g.nodes()
+            index = 0
+            train_nids, val_nids = [], []
+            for tm, vm in zip(train_mask, val_mask):
+                if tm and vm:
+                    raise Exception('Sample registered as both train and validation sample, should only be one.')
+                elif tm:
+                    train_nids.append(node_ids[index])
+                elif vm:
+                    val_nids.append(node_ids[index])
+                else:
+                    # is test mask
+                    pass
+                index += 1
+
             if hparams[HP_SHUFFLE]:
-                orig_train_mask = copy.deepcopy(train_mask)
-                orig_val_mask = copy.deepcopy(val_mask)
-                orig_test_mask = copy.deepcopy(test_mask)
+                orig_train_nids = copy.deepcopy(train_mask)
 
             # repeat training loops to get uncertainty
             for _ in range(num_repeats):
@@ -179,28 +194,9 @@ class TensorboardWriter:
 
                     # shuffle
                     if hparams[HP_SHUFFLE]:
-                        shuffle_mask = tf.random.shuffle(tf.cast([i for i in range(len(orig_train_mask))], dtype=tf.int64))
-                        train_mask = tf.gather(params=orig_train_mask, indices=shuffle_mask)
-                        val_mask = tf.gather(params=orig_val_mask, indices=shuffle_mask)
-                        test_mask = tf.gather(params=orig_test_mask, indices=shuffle_mask)
+                        train_nids = tf.random.shuffle(train_nids)
                     else:
                         pass
-
-                    # get node ids
-                    node_ids = g.nodes()
-                    index = 0
-                    train_nids, val_nids = [], []
-                    for tm, vm in zip(train_mask, val_mask):
-                        if tm and vm:
-                            raise Exception('Sample registered as both train and validation sample, should only be one.')
-                        elif tm:
-                            train_nids.append(node_ids[index])
-                        elif vm:
-                            val_nids.append(node_ids[index])
-                        else:
-                            # is test mask
-                            pass
-                        index += 1
 
                     # train for this epoch
                     if mode == 'sampling':
@@ -236,8 +232,9 @@ class TensorboardWriter:
                         # train without sampling or minibatching
                         with tf.GradientTape() as tape:
                             logits = model(g, features, mode=mode)
-                            loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
-                                                                           logits=tf.boolean_mask(tensor=logits, mask=train_mask))
+                            output_logits = tf.gather(logits, train_nids)
+                            output_labels = tf.gather(labels, train_nids)
+                            loss = tf.nn.softmax_cross_entropy_with_logits(labels=output_labels,logits=output_logits)
                             epoch_loss.append(tf.math.reduce_mean(loss))
                             grads = tape.gradient(loss, model.trainable_variables)
                             opt.apply_gradients(zip(grads, model.trainable_variables))
