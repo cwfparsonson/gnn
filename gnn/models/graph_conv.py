@@ -6,7 +6,7 @@ from gnn.models.tools import Linear, evaluate
 
 
 class GCNLayer(Model):
-    def __init__(self, out_feats, activation):
+    def __init__(self, out_feats, activation, batch_norm=False, dropout_rate=None):
         super(GCNLayer, self).__init__()
 
         self.activation = activation
@@ -16,11 +16,9 @@ class GCNLayer(Model):
         self.gcn_reduce_func = dgl.function.sum(msg='m', out='h')
 
         # add fully connected linear layer
-        self.linear = Linear(units=out_feats)
+        self.linear = Linear(units=out_feats, batch_norm=batch_norm, dropout_rate=dropout_rate)
 
-    def call(self, g, features, mode):
-
-
+    def call(self, g, features, training, mode):
 
         if mode == 'no_sampling':
             with g.local_scope():
@@ -32,7 +30,7 @@ class GCNLayer(Model):
                 h = g.ndata['h']
 
                 # forward aggregated messages through NN layer -> GNN node representation
-                h = self.linear(h, self.activation)
+                h = self.linear(inputs=h, training=training, activation=self.activation)
 
                 return h
 
@@ -50,7 +48,7 @@ class GCNLayer(Model):
                 h = block.dstdata['h']
 
                 # forward aggregated messages through NN layer -> GNN node representation
-                h = self.linear(h, self.activation)
+                h = self.linear(inputs=h, training=training, activation=self.activation)
 
                 return h
                 
@@ -79,7 +77,9 @@ class GCN(Model):
     '''
     def __init__(self,
                  layers_config={'out_feats': [16, 7],
-                                'activations': ['relu', None]}):
+                                'activations': ['relu', None],
+                                'batch_norms': [False, False],
+                                'dropout_rates': [0.5, None]}):
         super(GCN, self).__init__()
 
         assert len(layers_config['out_feats']) >= 1, \
@@ -90,17 +90,21 @@ class GCN(Model):
                                                                          len(layers_config['activations']))
         assert layers_config['activations'][-1] is None, \
                 'Final layer must have activation as None to output logits'
+        assert layers_config['dropout_rates'][-1] is None, \
+                'Final layer must have dropout_rate as None to avoid dropping predictions.'
 
         # define layers
         self._layers = []
         n_layers = len(layers_config['out_feats'])
         for i in range(n_layers):
             self._layers.append(GCNLayer(out_feats=layers_config['out_feats'][i],
-                                        activation=layers_config['activations'][i]))
+                                         activation=layers_config['activations'][i],
+                                         batch_norm=layers_config['batch_norms'][i],
+                                         dropout_rate=layers_config['dropout_rates'][i]))
 
         self.num_layers = len(self._layers)
 
-    def call(self, g, features, mode='no_sampling'):
+    def call(self, g, features, training, mode='no_sampling'):
         '''Forward graph node features through GNN, generating hidden feature representations.'''
         if mode == 'sampling' and len(g) != len(self._layers):
             raise Exception('Number of blocks must ({}) must == number of GNN layers ({}).'.format(len(g),len(self._layers)))
@@ -112,11 +116,11 @@ class GCN(Model):
         h = features
         if mode == 'no_sampling':
             for layer in self._layers:
-                h = layer(g, h, mode=mode)
+                h = layer(g, h, training=training, mode=mode)
         elif mode == 'sampling':
             blocks = iter(g)
             for layer in self._layers:
-                h = layer(next(blocks), h, mode=mode)
+                h = layer(next(blocks), h, training=training, mode=mode)
         else:
             raise Exception('Unrecognised mode: {}'.format(mode))
 
@@ -145,7 +149,8 @@ if __name__ == '__main__':
 
         # define gnn model
         layers_config = {'out_feats': [16, num_classes],
-                         'activations': ['relu', None]}
+                         'activations': ['relu', None],
+                         'dropout_rates': [0.5, None]}
         model = GCN(layers_config=layers_config)
 
         # add edges between each node and itself to preserve old node representations

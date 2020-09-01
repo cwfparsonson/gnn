@@ -60,24 +60,28 @@ class TensorboardWriter:
 
         Possible user defined hparam keys:
 
-            - HP_NUM_UNITS (name='num_units') 
+            - HP_NUM_UNITS (name='num_units') N.B. last layer will always have num_units==num_classes
             - HP_NUM_LAYERS (name='num_layers') # also translates to number of hops to do away from node when sampling neighbours
             - HP_OPTIMIZER (name='optimizer')
             - HP_LEARNING_RATE (name='learning_rate')
             - HP_NUM_EPOCHS (name='num_epochs')
             - HP_SHUFFLE (name='shuffle') # bool (whether or not to shuffle data)
+            - HP_BATCH_NORM (name='batch_norm') # bool (whether or not to use batch normalisation)
+            - HP_DROPOUT_RATE (name='dropout_rate') # dropout rate to apply to each layer during training (wont apply to last layer) (set as 0 to avoid dropout)
             - HP_SAMPLE (name='sample') # bool (whether or not to sample)
             - HP_BATCH_SIZE (name='batch_size') # must have HP_SAMPLE==True to take effect
             - HP_NUM_NEIGHBOURS (name='num_neighbours') # no. neighbours to sample for each gnn layer https://docs.dgl.ai/en/0.5.x/api/python/dgl.dataloading.html#neighbor-sampler # must have HP_SAMPLE==True to take effect
 
         '''
         # define default hyperparameters
-        HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([32])) # units per layer
+        HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([64])) # units per layer
         HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1])) # num layers (+=1 since always have output layer)
         HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
         HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001]))
         HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([600]))
         HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True]))
+        HP_BATCH_NORM = hp.HParam('batch_norm', hp.Discrete([False])) 
+        HP_DROPOUT_RATE = hp.HParam('dropout_rate', hp.Discrete([0])) # set to 0 to disable dropout
         HP_SAMPLE = hp.HParam('sample', hp.Discrete([True]))
         HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) 
         HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4])) # default to 0, which samples all neighbours for each hop/layer
@@ -87,6 +91,8 @@ class TensorboardWriter:
                            HP_LEARNING_RATE: HP_LEARNING_RATE.domain.values[0],
                            HP_NUM_EPOCHS: HP_NUM_EPOCHS.domain.values[0],
                            HP_SHUFFLE: HP_SHUFFLE.domain.values[0],
+                           HP_BATCH_NORM: HP_BATCH_NORM.domain.values[0], 
+                           HP_DROPOUT_RATE: HP_DROPOUT_RATE.domain.values[0], 
                            HP_SAMPLE: HP_SAMPLE.domain.values[0],
                            HP_BATCH_SIZE: HP_BATCH_SIZE.domain.values[0],
                            HP_NUM_NEIGHBOURS: HP_NUM_NEIGHBOURS.domain.values[0],}
@@ -124,6 +130,10 @@ class TensorboardWriter:
                 HP_NUM_EPOCHS = key
             elif key.name == 'shuffle':
                 HP_SHUFFLE = key
+            elif key.name == 'batch_norm':
+                HP_BATCH_NORM = key
+            elif key.name == 'dropout_rate':
+                HP_DROPOUT_RATE = key
             elif key.name == 'sample':
                 HP_SAMPLE = key
             elif key.name == 'batch_size':
@@ -132,6 +142,9 @@ class TensorboardWriter:
                 HP_NUM_NEIGHBOURS = key
             else:
                 raise Exception('Unrecognised hyperparameter defined in hparams.')
+        if hparams[HP_DROPOUT_RATE] == 0 or hparams[HP_DROPOUT_RATE] == 0.0:
+            # relable for model compatability
+            hparams[HP_DROPOUT_RATE] = None
 
         # one-hot encode labels
         unique_labels = np.unique(labels)
@@ -141,9 +154,11 @@ class TensorboardWriter:
         label_to_onehot = {label: onehot for label, onehot in zip(unique_labels, unique_onehot_labels)}
         labels = tf.cast([label_to_onehot[l] for l in labels.numpy()], dtype=tf.int64) # convert to onehot
 
-        # define gnn layers
+        # define gnn layers (automatically add defaults to final output layers)
         layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
-                         'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
+                         'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None],
+                         'batch_norms': [hparams[HP_BATCH_NORM] for _ in range(hparams[HP_NUM_LAYERS]+1)],
+                         'dropout_rates': [hparams[HP_DROPOUT_RATE] for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
 
         # add edges between each node and itself to preserve old node representations
         g.add_edges(g.nodes(), g.nodes())
@@ -162,7 +177,6 @@ class TensorboardWriter:
             all_test_accuracy = []
             all_training_loss = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
             all_validation_accuracy = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
-
 
             # get node ids
             node_ids = g.nodes()
@@ -223,7 +237,7 @@ class TensorboardWriter:
                                 input_features = blocks[0].srcdata['feat']
                                 output_labels = blocks[-1].dstdata['label']
                                 onehot_output_labels = tf.cast([label_to_onehot[l] for l in output_labels.numpy()],dtype=tf.int64)
-                                logits = model(blocks, input_features, mode=mode)
+                                logits = model(blocks, input_features, training=True, mode=mode)
                                 loss = tf.nn.softmax_cross_entropy_with_logits(labels=onehot_output_labels, logits=logits)
                                 epoch_loss.append(tf.math.reduce_mean(loss))
                                 grads = tape.gradient(loss, model.trainable_variables)
@@ -231,7 +245,7 @@ class TensorboardWriter:
                     else:
                         # train without sampling or minibatching
                         with tf.GradientTape() as tape:
-                            logits = model(g, features, mode=mode)
+                            logits = model(g, features, training=True, mode=mode)
                             output_logits = tf.gather(logits, train_nids)
                             output_labels = tf.gather(labels, train_nids)
                             loss = tf.nn.softmax_cross_entropy_with_logits(labels=output_labels,logits=output_logits)
