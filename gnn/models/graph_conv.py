@@ -15,7 +15,7 @@ class GCNLayer(Model):
         self.gcn_message_func = dgl.function.copy_src(src='h', out='m')
         self.gcn_reduce_func = dgl.function.sum(msg='m', out='h')
 
-        # add fully connected linear layer
+        # init fully connected linear layer
         self.linear = Linear(units=out_feats, batch_norm=batch_norm, dropout_rate=dropout_rate)
 
     def call(self, g, features, training, mode):
@@ -81,6 +81,8 @@ class GCN(Model):
                                 'batch_norms': [False, False],
                                 'dropout_rates': [0.5, None]}):
         super(GCN, self).__init__()
+
+        self.model_name = 'graph_conv'
 
         assert len(layers_config['out_feats']) >= 1, \
                 'Must specify out_feats for >=1 layer(s)'

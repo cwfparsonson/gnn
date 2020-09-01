@@ -55,7 +55,7 @@ class TensorboardWriter:
                           train_mask,
                           val_mask,
                           test_mask,
-                          num_repeats=1):
+                          num_repeats=0):
         '''Runs a training loop given user-defined hyperparameters & performs test.
 
         Possible user defined hparam keys:
@@ -85,6 +85,7 @@ class TensorboardWriter:
         HP_SAMPLE = hp.HParam('sample', hp.Discrete([True]))
         HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) 
         HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4])) # default to 0, which samples all neighbours for each hop/layer
+        HP_NUM_HEADS = hp.HParam('num_heads', hp.Discrete([2]))
         default_hparams = {HP_NUM_UNITS: HP_NUM_UNITS.domain.values[0],
                            HP_NUM_LAYERS: HP_NUM_LAYERS.domain.values[0],        
                            HP_OPTIMIZER: HP_OPTIMIZER.domain.values[0],
@@ -95,7 +96,8 @@ class TensorboardWriter:
                            HP_DROPOUT_RATE: HP_DROPOUT_RATE.domain.values[0], 
                            HP_SAMPLE: HP_SAMPLE.domain.values[0],
                            HP_BATCH_SIZE: HP_BATCH_SIZE.domain.values[0],
-                           HP_NUM_NEIGHBOURS: HP_NUM_NEIGHBOURS.domain.values[0],}
+                           HP_NUM_NEIGHBOURS: HP_NUM_NEIGHBOURS.domain.values[0],
+                           HP_NUM_HEADS: HP_NUM_HEADS.domain.values[0],}
 
         # enter user defined hparams
         hparams = {}
@@ -111,10 +113,6 @@ class TensorboardWriter:
             if key.name not in [k.name for k in hparams]:
                 raise Exception('hparam key {} name is invalid. Accepted hparam key names:\n{}'.format(key, [k.name for k in default_hparams]))
 
-        if hparams[HP_SAMPLE]:
-            mode = 'sampling'
-        else:
-            mode = 'no_sampling'
 
         # reconfigure hyperparameters for this run
         for key in hparams:
@@ -140,11 +138,18 @@ class TensorboardWriter:
                 HP_BATCH_SIZE = key
             elif key.name == 'num_neighbours':
                 HP_NUM_NEIGHBOURS = key
+            elif key.name == 'num_heads':
+                HP_NUM_HEADS = key
             else:
                 raise Exception('Unrecognised hyperparameter defined in hparams.')
+
         if hparams[HP_DROPOUT_RATE] == 0 or hparams[HP_DROPOUT_RATE] == 0.0:
             # relable for model compatability
             hparams[HP_DROPOUT_RATE] = None
+        if hparams[HP_SAMPLE]:
+            mode = 'sampling'
+        else:
+            mode = 'no_sampling'
 
         # one-hot encode labels
         unique_labels = np.unique(labels)
@@ -155,10 +160,12 @@ class TensorboardWriter:
         labels = tf.cast([label_to_onehot[l] for l in labels.numpy()], dtype=tf.int64) # convert to onehot
 
         # define gnn layers (automatically add defaults to final output layers)
+        # layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
+                         # 'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None],
+                         # 'batch_norms': [hparams[HP_BATCH_NORM] for _ in range(hparams[HP_NUM_LAYERS]+1)],
+                         # 'dropout_rates': [hparams[HP_DROPOUT_RATE] for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
         layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
-                         'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None],
-                         'batch_norms': [hparams[HP_BATCH_NORM] for _ in range(hparams[HP_NUM_LAYERS]+1)],
-                         'dropout_rates': [hparams[HP_DROPOUT_RATE] for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
+                         'num_heads': [hparams[HP_NUM_HEADS] for _ in range(hparams[HP_NUM_LAYERS])] + [1]}
 
         # add edges between each node and itself to preserve old node representations
         g.add_edges(g.nodes(), g.nodes())
@@ -198,7 +205,7 @@ class TensorboardWriter:
                 orig_train_nids = copy.deepcopy(train_mask)
 
             # repeat training loops to get uncertainty
-            for _ in range(num_repeats):
+            for _ in range(num_repeats+1):
                 # init model
                 model = Model(layers_config=layers_config)
 

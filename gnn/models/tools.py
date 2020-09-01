@@ -65,6 +65,8 @@ class Linear(Layer):
             pass
         elif activation == 'relu':
             h = tf.nn.relu(features=h)
+        elif activation == 'leaky_relu':
+            h = tf.nn.leaky_relu(features=h)
         else:
             raise Exception('Invalid \'activation\' argument: {}.'.format(activation))
 

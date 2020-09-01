@@ -6,27 +6,29 @@ from gnn.models.tools import Linear, evaluate
 
 
 class GATLayer(Model):
-    def __init__(self, out_feats, activation):
+    def __init__(self, out_feats, batch_norm=False, dropout_rate=None):
         super(GATLayer, self).__init__()
 
-        self.activation = activation
+        # init fully connected linear layer
+        self.fc = Linear(units=out_feats, bias=False, batch_norm=batch_norm, dropout_rate=dropout_rate) # eq 1
 
-        self.fc = Linear(units=out_feats, bias=False) # eq 1
-        self.attention_fc = Linear(units = 1, bias=False) # eq 2
+        # init fully connected attention layer
+        self.attention_fc = Linear(units=1, bias=False, batch_norm=batch_norm, dropout_rate=dropout_rate) # eq 2
 
     def edge_attention(self, edges):
         # edge UDF for eq 2
         z_node_embeddings = tf.concat([edges.src['z'], edges.dst['z']], axis=1)
-        attention_score = self.attention_fc(z_node_embeddings)
 
-        # normalise scores to become probability/normalised attention distribution
-        return {'e': tf.nn.leaky_relu(features=attention_score)}
+        # get normalised attention distribution using an activation func
+        attention_score = self.attention_fc(z_node_embeddings, training=False, activation='leaky_relu')
 
-    def message_func(self, edges):
+        return {'e': attention_score}
+
+    def gat_message_func(self, edges):
         # message UDF for eq 3 & 4
         return {'z': edges.src['z'], 'e': edges.data['e']}
 
-    def reduce_func(self, nodes):
+    def gat_reduce_func(self, nodes):
         # reduce UDF for eq 3 & 4
         alpha = tf.nn.softmax(logits=nodes.mailbox['e'], axis=1) # eq 3
 
@@ -34,29 +36,47 @@ class GATLayer(Model):
 
         return {'h': h}
 
-    def call(self, g, features):
-        z = self.fc(features) # eq 1
-        g.ndata['z'] = z
+    def call(self, g, features, training, mode):
 
-        g.apply_edges(self.edge_attention) # eq 2
+        if mode == 'no_sampling':
+            with g.local_scope():
+                z = self.fc(inputs=features, training=training) # eq 1
+                g.ndata['z'] = z
 
-        # eq 3 & 4
-        g.update_all(message_func=self.message_func, reduce_func=self.reduce_func)
-        return g.ndata.pop('h')
+                g.apply_edges(self.edge_attention) # eq 2
+
+                # eq 3 & 4
+                g.update_all(message_func=self.gat_message_func, reduce_func=self.gat_reduce_func)
+                return g.ndata.pop('h')
+
+        elif mode == 'sampling':
+            block = g
+            with block.local_scope():
+                z = self.fc(inputs=features, training=training) # eq 1
+                z_src = z
+                z_dst = z[:block.number_of_dst_nodes()]
+                block.srcdata['z'] = z_src
+                block.dstdata['z'] = z_dst
+
+                block.apply_edges(self.edge_attention) # eq 2
+
+                # pass messages between nodes & reduce/aggregate message
+                block.update_all(message_func=self.gat_message_func, reduce_func=self.gat_reduce_func)
+                return block.dstdata.pop('h')
         
 
 class MultiHeadGATLayer(Model):
-    def __init__(self, out_feats, num_heads, activation, merge='cat'):
+    def __init__(self, out_feats, num_heads, merge='cat'):
         super(MultiHeadGATLayer, self).__init__()
         
         self.heads = []
         for i in range(num_heads):
-            self.heads.append(GATLayer(out_feats, activation))
+            self.heads.append(GATLayer(out_feats))
 
         self.merge = merge
 
-    def call(self, g, features):
-        head_outs = [attention_head(g, features) for attention_head in self.heads]
+    def call(self, g, features, training, mode):
+        head_outs = [attention_head(g, features, training=training, mode=mode) for attention_head in self.heads]
 
         # merge attention head outputs 
         if self.merge == 'cat':
@@ -67,33 +87,38 @@ class MultiHeadGATLayer(Model):
 class GAT(Model):
     def __init__(self,
                  layers_config={'out_feats': [16, 7],
-                                'activations': ['relu', None],
                                 'num_heads': [2, 1]}):
         super(GAT, self).__init__()
 
+        self.model_name = 'gat_conv'
+
         assert len(layers_config['out_feats']) >= 1, \
                 'Must specify out_feats for >=1 layer(s)'
-        assert len(layers_config['out_feats']) == len(layers_config['activations']) == len(layers_config['num_heads']), \
-                'Must specify out_feats, activations and num_heads for all layers \
-                (have specified {} out_feats, {} activations and {} num_heads)'.format(len(layers_config['out_feats']),
-                                                                                       len(layers_config['activations']),
-                                                                                       len(layers_config['num_heads']))
-        assert layers_config['activations'][-1] is None, \
-                'Final layer must have activation as None to output logits'
+        # assert len(layers_config['out_feats']) == len(layers_config['activations']) == len(layers_config['num_heads']), \
+                # 'Must specify out_feats, activations and num_heads for all layers \
+                # (have specified {} out_feats, {} activations and {} num_heads)'.format(len(layers_config['out_feats']),
+                                                                                       # len(layers_config['activations']),
+                                                                                       # len(layers_config['num_heads']))
+        # assert layers_config['activations'][-1] is None, \
+                # 'Final layer must have activation as None to output logits'
         assert layers_config['num_heads'][-1] == 1, \
                 'Final GNN layer\'s attention layer must num_heads == 1'
 
         self._layers = []
-        n_layers = len(layers_config['out_feats'])
-        for i in range(n_layers):
+        self.num_layers = len(layers_config['out_feats'])
+        for i in range(self.num_layers):
             self._layers.append(MultiHeadGATLayer(out_feats=layers_config['out_feats'][i],
-                                                  num_heads=layers_config['num_heads'][i],
-                                                  activation=layers_config['activations'][i]))
+                                                  num_heads=layers_config['num_heads'][i]))
 
-    def call(self, g, features):
+    def call(self, g, features, training, mode='no_sampling'):
         h = features
-        for layer in self._layers:
-            h = layer(g, h)
+        if mode == 'no_sampling':
+            for layer in self._layers:
+                h = layer(g, h, training=training, mode=mode)
+        elif mode == 'sampling':
+            blocks = iter(g)
+            for layer in self._layers:
+                h = layer(next(blocks), h, training=training, mode=mode)
 
         return h
 
@@ -122,8 +147,7 @@ if __name__ == '__main__':
 
         # define gnn model
         layers_config = {'out_feats': [8, num_classes],
-                         'num_heads': [2, 1],
-                         'activations': [None, None]}
+                         'num_heads': [2, 1]}
         model = GAT(layers_config=layers_config)
 
         # add edges between each node and itself to preserve old node representations
@@ -139,7 +163,7 @@ if __name__ == '__main__':
         num_epochs = 200
         for epoch in range(num_epochs):
             with tf.GradientTape() as tape:
-                logits = model(g, features)
+                logits = model(g, features, training=True, mode='no_sampling')
                 loss = tf.nn.softmax_cross_entropy_with_logits(labels=tf.boolean_mask(tensor=labels, mask=train_mask),
                                                                logits=tf.boolean_mask(tensor=logits, mask=train_mask))
                 all_loss.append(tf.keras.backend.mean(loss))
@@ -150,7 +174,7 @@ if __name__ == '__main__':
             all_epochs.append(epoch)
             print('Epoch: {} | Training loss: {} | Validation accuracy: {}'.format(epoch, tf.keras.backend.mean(loss), acc))
 
-        acc = evaluate(model, features, labels, test_mask)
+        acc = evaluate(model, g, features, labels, test_mask)
         print('Final test accuracy: {}'.format(acc))
         
         plt.figure()
