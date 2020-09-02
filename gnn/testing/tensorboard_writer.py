@@ -1,7 +1,7 @@
+import tensorflow as tf
 import dgl
 import math
 from gnn.models.graph_conv import evaluate
-import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import numpy as np
 import os
@@ -176,35 +176,33 @@ class TensorboardWriter:
         else:
             opt = tf.keras.optimizers.SGD(learning_rate=hparams[HP_LEARNING_RATE])
 
-        # init physical device(s)
-        device = '/:CPU:0'
-        with tf.device(device):
 
-            # init run trackers
-            all_test_accuracy = []
-            all_training_loss = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
-            all_validation_accuracy = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
+        # init run trackers
+        all_test_accuracy = []
+        all_training_loss = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
+        all_validation_accuracy = {epoch: [] for epoch in range(hparams[HP_NUM_EPOCHS])}
 
-            # get node ids
-            node_ids = g.nodes()
-            index = 0
-            train_nids, val_nids = [], []
-            for tm, vm in zip(train_mask, val_mask):
-                if tm and vm:
-                    raise Exception('Sample registered as both train and validation sample, should only be one.')
-                elif tm:
-                    train_nids.append(node_ids[index])
-                elif vm:
-                    val_nids.append(node_ids[index])
-                else:
-                    # is test mask
-                    pass
-                index += 1
+        # get node ids
+        node_ids = g.nodes()
+        index = 0
+        train_nids, val_nids = [], []
+        for tm, vm in zip(train_mask, val_mask):
+            if tm and vm:
+                raise Exception('Sample registered as both train and validation sample, should only be one.')
+            elif tm:
+                train_nids.append(node_ids[index])
+            elif vm:
+                val_nids.append(node_ids[index])
+            else:
+                # is test mask
+                pass
+            index += 1
 
-            if hparams[HP_SHUFFLE]:
-                orig_train_nids = copy.deepcopy(train_mask)
+        if hparams[HP_SHUFFLE]:
+            orig_train_nids = copy.deepcopy(train_mask)
 
-            # repeat training loops to get uncertainty
+        # repeat training loops to get uncertainty
+        with tf.device('/gpu:0'):
             for _ in range(num_repeats+1):
                 # init model
                 model = Model(layers_config=layers_config)
@@ -234,6 +232,7 @@ class TensorboardWriter:
                             train_mini_batches.append(train_nids[prev_index:index])
                             prev_index = copy.deepcopy(index)
                             index += hparams[HP_BATCH_SIZE]
+
                         sampler = dgl.dataloading.MultiLayerNeighborSampler(fanouts=fanouts, replace=False)
                         collator = dgl.dataloading.NodeCollator(g, train_nids, sampler)
                         
@@ -272,22 +271,22 @@ class TensorboardWriter:
                 acc = evaluate(model, g, features, labels, test_mask)
                 all_test_accuracy.append(acc)
 
-        # summarise run
-        # training loss and validation
-        for epoch in range(hparams[HP_NUM_EPOCHS]):
-            loss = np.mean(np.array(all_training_loss[epoch]))
-            acc = np.mean(np.array(all_validation_accuracy[epoch]))
-            with tf.summary.create_file_writer(run_dir).as_default():
-                tf.summary.scalar(self.METRIC_TRAINING_LOSS, data=loss, step=epoch)
-                tf.summary.scalar(self.METRIC_VALIDATION_ACCURACY, data=acc, step=epoch)
-        # test
-        mean_accuracy = np.mean(np.array(all_test_accuracy))
-        if num_repeats > 1:
-            uncertainty = (np.max(np.array(all_test_accuracy)) - np.min(np.array(all_test_accuracy))) / 2
-        else:
-            uncertainty = 0
+            # summarise run
+            # training loss and validation
+            for epoch in range(hparams[HP_NUM_EPOCHS]):
+                loss = np.mean(np.array(all_training_loss[epoch]))
+                acc = np.mean(np.array(all_validation_accuracy[epoch]))
+                with tf.summary.create_file_writer(run_dir).as_default():
+                    tf.summary.scalar(self.METRIC_TRAINING_LOSS, data=loss, step=epoch)
+                    tf.summary.scalar(self.METRIC_VALIDATION_ACCURACY, data=acc, step=epoch)
+            # test
+            mean_accuracy = np.mean(np.array(all_test_accuracy))
+            if num_repeats > 1:
+                uncertainty = (np.max(np.array(all_test_accuracy)) - np.min(np.array(all_test_accuracy))) / 2
+            else:
+                uncertainty = 0
 
-        return mean_accuracy, uncertainty 
+            return mean_accuracy, uncertainty 
 
 
     def run(self, run_dir, Model, hparams, data_dict, num_repeats=1):
@@ -303,7 +302,8 @@ class TensorboardWriter:
                 accuracy value).
 
         '''
-        data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
+        with tf.device('/cpu:0'):
+            data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(hparams) # record hparams used in this run
             accuracy, uncertainty = self._train_test_model(run_dir, 

@@ -1,6 +1,13 @@
 README.rst
 setup.py
+gnn/__init__.py
 gnn.egg-info/PKG-INFO
 gnn.egg-info/SOURCES.txt
 gnn.egg-info/dependency_links.txt
 gnn.egg-info/top_level.txt
+gnn/models/__init__.py
+gnn/models/gat_conv.py
+gnn/models/graph_conv.py
+gnn/models/graph_sage.py
+gnn/models/models.py
+gnn/models/tools.py
