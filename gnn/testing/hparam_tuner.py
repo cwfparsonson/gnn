@@ -12,9 +12,7 @@ if __name__ == '__main__':
     # setup
     # -------------------------------------------------------------------------
     dataset = 'cora'
-    logs_dir = '../../data/logs/gat_hparam_tuning/'
-    # model = GCN
-    model = GAT
+    logs_dir = '../../data/logs/gcn_hparam_tuning/'
     num_repeats = 2 # num times to repeat each trial to get uncertainty value
     overwrite = False # whether or not to overwrite prev saved data
     # -------------------------------------------------------------------------
@@ -33,33 +31,35 @@ if __name__ == '__main__':
     # gnn layer configuration (specific to GNN), uncomment one below
     # -------------------------------------------------------------------------
 
-    # # GCN
-    # out_feats = [[64, 7], [64, 64, 7], [64, 32, 7]]
-    # activations = activations = [['relu', None], ['leaky_relu', None]]
-    # dropout_rates = [[None, None]]
-    # batch_norms = [[True, False]]
-    # layers_configs = []
-    # for o_fs in out_feats:
-        # for acts in activations:
-            # for drs in dropout_rates:
-                # for bns in batch_norms:
-                    # layers_config = {'out_feats': o_fs,
-                                     # 'activations': acts,
-                                     # 'dropout_rates': drs,
-                                     # 'batch_norms': bns}
-                    # json_layers_config = json.dumps(layers_config) # conv to str
-                    # layers_configs.append(json_layers_config)
-
-    # GAT
-    out_feats = [[64, 7], [64, 64, 7], [64, 32, 7]]
-    num_heads = [[8, 1]]
+    # GCN
+    model = GCN
+    out_feats = [[64, 7]]
+    activations = activations = [['relu', None], ['leaky_relu', None]]
+    dropout_rates = [[None, None], [0.5, None]]
+    batch_norms = [[False, False]]
     layers_configs = []
     for o_fs in out_feats:
-        for heads in num_heads:
-            layers_config = {'out_feats': o_fs,
-                             'num_heads': heads}
-            json_layers_config = json.dumps(layers_config) # conv to str
-            layers_configs.append(json_layers_config)
+        for acts in activations:
+            for drs in dropout_rates:
+                for bns in batch_norms:
+                    layers_config = {'out_feats': o_fs,
+                                     'activations': acts,
+                                     'dropout_rates': drs,
+                                     'batch_norms': bns}
+                    json_layers_config = json.dumps(layers_config) # conv to str
+                    layers_configs.append(json_layers_config)
+
+    # # GAT
+    # model = GAT
+    # out_feats = [[64, 7], [64, 64, 7], [64, 32, 7]]
+    # num_heads = [[8, 1]]
+    # layers_configs = []
+    # for o_fs in out_feats:
+        # for heads in num_heads:
+            # layers_config = {'out_feats': o_fs,
+                             # 'num_heads': heads}
+            # json_layers_config = json.dumps(layers_config) # conv to str
+            # layers_configs.append(json_layers_config)
 
     # -------------------------------------------------------------------------
     # general configuration

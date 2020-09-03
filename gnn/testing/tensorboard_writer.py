@@ -37,11 +37,13 @@ class TensorboardWriter:
             else:
                 print('Generating new directory.')
                 v = 2
-                while os.path.exists(self.logs_dir):
+                new_path = self.logs_dir
+                while os.path.exists(new_path):
                     new_path = self.logs_dir + '_v' + str(v) + '/'
                     v += 1
                 self.logs_dir = new_path
                 os.mkdir(self.logs_dir)
+                print('New directory:\n{}'.format(self.logs_dir))
 
         with tf.summary.create_file_writer(self.logs_dir).as_default():
             hp.hparams_config(hparams=self.hparams,
