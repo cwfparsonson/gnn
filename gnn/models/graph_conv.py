@@ -86,6 +86,7 @@ class GCN(Model):
 
         self.model_name = 'graph_conv'
 
+        # check layers_config is valid
         num_layers = len(layers_config['out_feats'])
         num_acts = len(layers_config['activations'])
         num_bns = len(layers_config['batch_norms'])
@@ -94,21 +95,37 @@ class GCN(Model):
             print('Warning: Only specified {} activations for {} layer model (num_layers defined by number of elements in \'out_feats\'). Appending first element of \'activations\' to remaining layers (except final output layer).'.format(num_acts, num_layers))
             while len(layers_config['activations']) < num_layers:
                 layers_config['activations'].insert(0, layers_config['activations'][0])
+        elif num_layers < num_acts:
+            print('Warning: Specified {} activations for {} layer model (num_layers defined by number of elements in \'out_feats\'). Removing extra elements of \'activations\' starting from first entry (except final output layer).'.format(num_acts, num_layers))
+            while len(layers_config['activations']) > num_layers:
+                del layers_config['activations'][0]
+        else:
+            pass
+
         if num_layers > num_bns:
             print('Warning: Only specified {} batch_norms for {} layer model (num_layers defined by number of elements in \'out_feats\'). Appending first element of \'batch_norms\' to remaining layers (except final output layer).'.format(num_bns, num_layers))
             while len(layers_config['batch_norms']) < num_layers:
                 layers_config['batch_norms'].insert(0, layers_config['batch_norms'][0])
+        elif num_layers < num_bns:
+            print('Warning: Specified {} batch_norms for {} layer model (num_layers defined by number of elements in \'out_feats\'). Removing extra elements of \'batch_norms\' starting from first entry (except final output layer).'.format(num_bns, num_layers))
+            while len(layers_config['batch_norms']) > num_layers:
+                del layers_config['batch_norms'][0]
+        else:
+            pass
+
         if num_layers > num_drs:
             print('Warning: Only specified {} dropout_rates for {} layer model (num_layers defined by number of elements in \'out_feats\'). Appending first element of \'dropout_rates\' to remaining layers (except final output layer).'.format(num_drs, num_layers))
             while len(layers_config['dropout_rates']) < num_layers:
                 layers_config['dropout_rates'].insert(0, layers_config['dropout_rates'][0])
+        elif num_layers < num_drs:
+            print('Warning: Specified {} dropout_rates for {} layer model (num_layers defined by number of elements in \'out_feats\'). Removing extra elements of \'dropout_rates\' starting from first entry (except final output layer).'.format(num_drs, num_layers))
+            while len(layers_config['dropout_rates']) > num_layers:
+                del layers_config['dropout_rates'][0]
+        else:
+            pass
         
         assert len(layers_config['out_feats']) >= 1, \
                 'Must specify out_feats for >=1 layer(s)'
-        assert len(layers_config['out_feats']) == len(layers_config['activations']), \
-                'Must specify out_feats and activations for all layers \
-                (have specified {} out_feats and {} activations)'.format(len(layers_config['out_feats']),
-                                                                         len(layers_config['activations']))
         assert layers_config['activations'][-1] is None, \
                 'Final layer must have activation as None to output logits'
         assert layers_config['dropout_rates'][-1] is None, \

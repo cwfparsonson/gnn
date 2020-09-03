@@ -92,17 +92,24 @@ class GAT(Model):
 
         self.model_name = 'gat_conv'
 
+        # check layers config is valid
+        num_layers = len(layers_config['out_feats'])
+        num_heads = len(layers_config['num_heads'])
+        if num_layers > num_heads:
+            print('Warning: Only specified {} num_heads for {} layer model (num_layers defined by number of elements in \'out_feats\'). Appending first element of \'num_heads\' to remaining layers (except final output layer).'.format(num_heads, num_layers))
+            while len(layers_config['num_heads']) < num_layers:
+                layers_config['num_heads'].insert(0, layers_config['num_heads'][0])
+        elif num_layers < num_heads:
+            print('Warning: Specified {} num_heads for {} layer model (num_layers defined by number of elements in \'out_feats\'). Removing extra elements of \'num_heads\' starting from first entry (except final output layer).'.format(num_heads, num_layers))
+            while len(layers_config['num_heads']) > num_layers:
+                del layers_config['num_heads'][0]
+        else:
+            pass
+
         assert len(layers_config['out_feats']) >= 1, \
                 'Must specify out_feats for >=1 layer(s)'
-        # assert len(layers_config['out_feats']) == len(layers_config['activations']) == len(layers_config['num_heads']), \
-                # 'Must specify out_feats, activations and num_heads for all layers \
-                # (have specified {} out_feats, {} activations and {} num_heads)'.format(len(layers_config['out_feats']),
-                                                                                       # len(layers_config['activations']),
-                                                                                       # len(layers_config['num_heads']))
-        # assert layers_config['activations'][-1] is None, \
-                # 'Final layer must have activation as None to output logits'
         assert layers_config['num_heads'][-1] == 1, \
-                'Final GNN layer\'s attention layer must num_heads == 1'
+                'Final GNN layer\'s attention layer must have num_heads == 1'
 
         self._layers = []
         self.num_layers = len(layers_config['out_feats'])

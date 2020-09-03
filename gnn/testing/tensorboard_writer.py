@@ -35,8 +35,13 @@ class TensorboardWriter:
                 shutil.rmtree(self.logs_dir[:-1])
                 os.mkdir(self.logs_dir)
             else:
-                print('Change to an empty dir or set overwrite == True.')
-                raise
+                print('Generating new directory.')
+                v = 2
+                while os.path.exists(self.logs_dir):
+                    new_path = self.logs_dir + '_v' + str(v) + '/'
+                    v += 1
+                self.logs_dir = new_path
+                os.mkdir(self.logs_dir)
 
         with tf.summary.create_file_writer(self.logs_dir).as_default():
             hp.hparams_config(hparams=self.hparams,
