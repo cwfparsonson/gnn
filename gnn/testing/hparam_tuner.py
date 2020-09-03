@@ -11,30 +11,29 @@ if __name__ == '__main__':
     logs_dir = '../../data/logs/hparam_tuning/'
     # model = GCN
     model = GAT
-    num_repeats = 3 # num times to repeat each trial to get uncertainty value
+    num_repeats = 1 # num times to repeat each trial to get uncertainty value
 
     # load dataset
-    with tf.device('/cpu:0'):
-        g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
-        data_dict = {'graph': g,
-                     'features': features,
-                     'labels': labels,
-                     'train_mask': train_mask,
-                     'val_mask': val_mask,
-                     'test_mask': test_mask}
+    g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
+    data_dict = {'graph': g,
+                 'features': features,
+                 'labels': labels,
+                 'train_mask': train_mask,
+                 'val_mask': val_mask,
+                 'test_mask': test_mask}
 
     # set hyperparams to trial
-    HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([64, 128])) # 64
+    HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([64])) # 64
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam'])) # adam
     HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001])) # 0.0001
-    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([300, 400])) # 200
+    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([50])) # 200 # 300
     HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True])) 
     HP_BATCH_NORM = hp.HParam('batch_norm', hp.Discrete([False]))
     HP_DROPOUT_RATE = hp.HParam('dropout_rate', hp.Discrete([0])) 
     HP_SAMPLE = hp.HParam('sample', hp.Discrete([True])) # True
-    HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) 
-    HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4])) 
-    HP_NUM_HEADS = hp.HParam('num_heads', hp.Discrete([3, 4, 5, 8]))
+    HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) # 35
+    HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4]))  # 4
+    HP_NUM_HEADS = hp.HParam('num_heads', hp.Discrete([8])) # 8
     hparams = [HP_NUM_UNITS, 
                HP_OPTIMIZER, 
                HP_LEARNING_RATE, 
