@@ -10,17 +10,17 @@ class GATLayer(Model):
         super(GATLayer, self).__init__()
 
         # init fully connected linear layer
-        self.fc = Linear(units=out_feats, bias=False, batch_norm=batch_norm, dropout_rate=dropout_rate) # eq 1
+        self.fc = Linear(units=out_feats, bias=False, activation=None, batch_norm=batch_norm, dropout_rate=dropout_rate) # eq 1
 
         # init fully connected attention layer
-        self.attention_fc = Linear(units=1, bias=False, batch_norm=batch_norm, dropout_rate=dropout_rate) # eq 2
+        self.attention_fc = Linear(units=1, bias=False, activation='leaky_relu', batch_norm=batch_norm, dropout_rate=dropout_rate) # eq 2
 
     def edge_attention(self, edges):
         # edge UDF for eq 2
         z_node_embeddings = tf.concat([edges.src['z'], edges.dst['z']], axis=1)
 
         # get normalised attention distribution using an activation func
-        attention_score = self.attention_fc(z_node_embeddings, training=False, activation='leaky_relu')
+        attention_score = self.attention_fc(z_node_embeddings, training=False)
 
         return {'e': attention_score}
 

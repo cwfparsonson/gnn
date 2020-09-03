@@ -7,6 +7,7 @@ import numpy as np
 import os
 import shutil
 import copy
+import json
 
 class TensorboardWriter:
     def __init__(self, logs_dir, hparams, overwrite=False):
@@ -60,45 +61,39 @@ class TensorboardWriter:
 
         Possible user defined hparam keys:
 
-            - HP_NUM_UNITS (name='num_units') N.B. last layer will always have num_units==num_classes
-            - HP_NUM_LAYERS (name='num_layers') # also translates to number of hops to do away from node when sampling neighbours
+            - HP_LAYERS_CONFIG (name='layers_config') model-specific layers config dict
             - HP_OPTIMIZER (name='optimizer')
             - HP_LEARNING_RATE (name='learning_rate')
             - HP_NUM_EPOCHS (name='num_epochs')
             - HP_SHUFFLE (name='shuffle') # bool (whether or not to shuffle data)
-            - HP_BATCH_NORM (name='batch_norm') # bool (whether or not to use batch normalisation)
-            - HP_DROPOUT_RATE (name='dropout_rate') # dropout rate to apply to each layer during training (wont apply to last layer) (set as 0 to avoid dropout)
             - HP_SAMPLE (name='sample') # bool (whether or not to sample)
             - HP_BATCH_SIZE (name='batch_size') # must have HP_SAMPLE==True to take effect
             - HP_NUM_NEIGHBOURS (name='num_neighbours') # no. neighbours to sample for each gnn layer https://docs.dgl.ai/en/0.5.x/api/python/dgl.dataloading.html#neighbor-sampler # must have HP_SAMPLE==True to take effect
 
         '''
         with tf.device('/cpu:0'):
-            # define default hyperparameters
-            HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([64])) # units per layer
-            HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1])) # num layers (+=1 since always have output layer)
+            # define default hyperparameters (configured for basic GCN i.e. no attention heads etc)
+            layers_config = {'out_feats': [16, 7],
+                             'activations': ['relu', None],
+                             'dropout_rates': [None, None],
+                             'batch_norms': [False, False]}
+            json_layers_config = json.dumps(layers_config) # conv to str
+            HP_LAYERS_CONFIG = hp.HParam('layers_config', hp.Discrete(json_layers_config))
             HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
             HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001]))
             HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([600]))
             HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True]))
-            HP_BATCH_NORM = hp.HParam('batch_norm', hp.Discrete([False])) 
-            HP_DROPOUT_RATE = hp.HParam('dropout_rate', hp.Discrete([0])) # set to 0 to disable dropout
             HP_SAMPLE = hp.HParam('sample', hp.Discrete([True]))
             HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) 
             HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4])) # default to 0, which samples all neighbours for each hop/layer
-            HP_NUM_HEADS = hp.HParam('num_heads', hp.Discrete([2]))
-            default_hparams = {HP_NUM_UNITS: HP_NUM_UNITS.domain.values[0],
-                               HP_NUM_LAYERS: HP_NUM_LAYERS.domain.values[0],        
+            default_hparams = {HP_LAYERS_CONFIG: HP_LAYERS_CONFIG.domain.values[0],
                                HP_OPTIMIZER: HP_OPTIMIZER.domain.values[0],
                                HP_LEARNING_RATE: HP_LEARNING_RATE.domain.values[0],
                                HP_NUM_EPOCHS: HP_NUM_EPOCHS.domain.values[0],
                                HP_SHUFFLE: HP_SHUFFLE.domain.values[0],
-                               HP_BATCH_NORM: HP_BATCH_NORM.domain.values[0], 
-                               HP_DROPOUT_RATE: HP_DROPOUT_RATE.domain.values[0], 
                                HP_SAMPLE: HP_SAMPLE.domain.values[0],
                                HP_BATCH_SIZE: HP_BATCH_SIZE.domain.values[0],
-                               HP_NUM_NEIGHBOURS: HP_NUM_NEIGHBOURS.domain.values[0],
-                               HP_NUM_HEADS: HP_NUM_HEADS.domain.values[0],}
+                               HP_NUM_NEIGHBOURS: HP_NUM_NEIGHBOURS.domain.values[0],}
 
             # enter user defined hparams
             hparams = {}
@@ -117,10 +112,8 @@ class TensorboardWriter:
 
             # reconfigure hyperparameters for this run
             for key in hparams:
-                if key.name == 'num_units':
-                    HP_NUM_UNITS = key
-                elif key.name == 'num_layers':
-                    HP_NUM_LAYERS = key
+                if key.name == 'layers_config':
+                    HP_LAYERS_CONFIG = key
                 elif key.name == 'optimizer':
                     HP_OPTIMIZER = key
                 elif key.name == 'learning_rate':
@@ -129,32 +122,26 @@ class TensorboardWriter:
                     HP_NUM_EPOCHS = key
                 elif key.name == 'shuffle':
                     HP_SHUFFLE = key
-                elif key.name == 'batch_norm':
-                    HP_BATCH_NORM = key
-                elif key.name == 'dropout_rate':
-                    HP_DROPOUT_RATE = key
                 elif key.name == 'sample':
                     HP_SAMPLE = key
                 elif key.name == 'batch_size':
                     HP_BATCH_SIZE = key
                 elif key.name == 'num_neighbours':
                     HP_NUM_NEIGHBOURS = key
-                elif key.name == 'num_heads':
-                    HP_NUM_HEADS = key
                 else:
                     raise Exception('Unrecognised hyperparameter defined in hparams.')
 
-            if hparams[HP_DROPOUT_RATE] == 0 or hparams[HP_DROPOUT_RATE] == 0.0:
-                # relable for model compatability
-                hparams[HP_DROPOUT_RATE] = None
             if hparams[HP_SAMPLE]:
                 mode = 'sampling'
             else:
                 mode = 'no_sampling'
+            hparams[HP_LAYERS_CONFIG] = json.loads(hparams[HP_LAYERS_CONFIG]) # convert from str to dict
 
             # one-hot encode labels
             unique_labels = np.unique(labels)
             num_classes = len(unique_labels)
+            if num_classes != hparams[HP_LAYERS_CONFIG]['out_feats'][-1]:
+                raise Exception('Set number of units in final layer of model ({}) to number of possible classes to classify ({}).'.format(hparams[HP_LAYERS_CONFIG]['out_feats'][-1], num_classes))
             onehot_labels = tf.one_hot(indices=labels, depth=num_classes)
             unique_onehot_labels = np.unique(onehot_labels, axis=0)
             label_to_onehot = {label: onehot for label, onehot in zip(unique_labels, unique_onehot_labels)}
@@ -165,8 +152,8 @@ class TensorboardWriter:
                              # 'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None],
                              # 'batch_norms': [hparams[HP_BATCH_NORM] for _ in range(hparams[HP_NUM_LAYERS]+1)],
                              # 'dropout_rates': [hparams[HP_DROPOUT_RATE] for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
-            layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
-                             'num_heads': [hparams[HP_NUM_HEADS] for _ in range(hparams[HP_NUM_LAYERS])] + [1]}
+            # layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
+                             # 'num_heads': [hparams[HP_NUM_HEADS] for _ in range(hparams[HP_NUM_LAYERS])] + [1]}
 
             # add edges between each node and itself to preserve old node representations
             g.add_edges(g.nodes(), g.nodes())
@@ -205,7 +192,7 @@ class TensorboardWriter:
             # repeat training loops to get uncertainty
             for _ in range(num_repeats+1):
                 # init model
-                model = Model(layers_config=layers_config)
+                model = Model(layers_config=hparams[HP_LAYERS_CONFIG])
 
                 # begin training loop
                 for epoch in range(hparams[HP_NUM_EPOCHS]):
@@ -240,10 +227,11 @@ class TensorboardWriter:
                         for batch_nodes in train_mini_batches:
                             with tf.GradientTape() as tape:
                                 input_nodes, output_nodes, blocks = collator.collate(batch_nodes)
-                                with tf.device('/gpu:0'):
+                                with tf.device('/gpu:0'): # uncomment & unindent below if training on cpu
                                     input_features = blocks[0].srcdata['feat']
                                     output_labels = blocks[-1].dstdata['label']
                                     onehot_output_labels = tf.cast([label_to_onehot[l] for l in output_labels.numpy()],dtype=tf.int64)
+                                    blocks = [block.to('/gpu:0') for block in blocks] # uncomment if training on cpu
                                     logits = model(blocks, input_features, training=True, mode=mode)
                                     loss = tf.nn.softmax_cross_entropy_with_logits(labels=onehot_output_labels, logits=logits)
                                     epoch_loss.append(tf.math.reduce_mean(loss))

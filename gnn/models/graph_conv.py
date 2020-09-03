@@ -9,14 +9,16 @@ class GCNLayer(Model):
     def __init__(self, out_feats, activation, batch_norm=False, dropout_rate=None):
         super(GCNLayer, self).__init__()
 
-        self.activation = activation
-
         # define the message & reduce function as usual
         self.gcn_message_func = dgl.function.copy_src(src='h', out='m')
         self.gcn_reduce_func = dgl.function.sum(msg='m', out='h')
 
         # init fully connected linear layer
-        self.linear = Linear(units=out_feats, batch_norm=batch_norm, dropout_rate=dropout_rate)
+        self.linear = Linear(units=out_feats, 
+                             bias=True, 
+                             activation=activation, 
+                             batch_norm=batch_norm, 
+                             dropout_rate=dropout_rate)
 
     def call(self, g, features, training, mode):
 
@@ -30,7 +32,7 @@ class GCNLayer(Model):
                 h = g.ndata['h']
 
                 # forward aggregated messages through NN layer -> GNN node representation
-                h = self.linear(inputs=h, training=training, activation=self.activation)
+                h = self.linear(inputs=h, training=training)
 
                 return h
 
@@ -48,7 +50,7 @@ class GCNLayer(Model):
                 h = block.dstdata['h']
 
                 # forward aggregated messages through NN layer -> GNN node representation
-                h = self.linear(inputs=h, training=training, activation=self.activation)
+                h = self.linear(inputs=h, training=training)
 
                 return h
                 
@@ -84,6 +86,23 @@ class GCN(Model):
 
         self.model_name = 'graph_conv'
 
+        num_layers = len(layers_config['out_feats'])
+        num_acts = len(layers_config['activations'])
+        num_bns = len(layers_config['batch_norms'])
+        num_drs = len(layers_config['dropout_rates'])
+        if num_layers > num_acts:
+            print('Warning: Only specified {} activations for {} layer model (num_layers defined by number of elements in \'out_feats\'). Appending first element of \'activations\' to remaining layers (except final output layer).'.format(num_acts, num_layers))
+            while len(layers_config['activations']) < num_layers:
+                layers_config['activations'].insert(0, layers_config['activations'][0])
+        if num_layers > num_bns:
+            print('Warning: Only specified {} batch_norms for {} layer model (num_layers defined by number of elements in \'out_feats\'). Appending first element of \'batch_norms\' to remaining layers (except final output layer).'.format(num_bns, num_layers))
+            while len(layers_config['batch_norms']) < num_layers:
+                layers_config['batch_norms'].insert(0, layers_config['batch_norms'][0])
+        if num_layers > num_drs:
+            print('Warning: Only specified {} dropout_rates for {} layer model (num_layers defined by number of elements in \'out_feats\'). Appending first element of \'dropout_rates\' to remaining layers (except final output layer).'.format(num_drs, num_layers))
+            while len(layers_config['dropout_rates']) < num_layers:
+                layers_config['dropout_rates'].insert(0, layers_config['dropout_rates'][0])
+        
         assert len(layers_config['out_feats']) >= 1, \
                 'Must specify out_feats for >=1 layer(s)'
         assert len(layers_config['out_feats']) == len(layers_config['activations']), \

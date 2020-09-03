@@ -10,12 +10,14 @@ class Linear(Layer):
     def __init__(self, 
                  units=32,
                  bias=True,
+                 activation=None,
                  batch_norm=False,
                  dropout_rate=None):
         super(Linear, self).__init__()
          
         self.units = units # num units in layer == num dims to output
         self.bias = bias # whether or not to use bias units in layer
+        self.activation = activation # non-linearity to use
         self.batch_norm = batch_norm
         self.dropout_rate = dropout_rate
 
@@ -44,7 +46,7 @@ class Linear(Layer):
         self.bn_layer = tf.keras.layers.BatchNormalization()
 
 
-    def call(self, inputs, training, activation=None):
+    def call(self, inputs, training):
         '''Performs forward propagation through layer when layer is called.
 
         Will automatically run build() the first time it is called.
@@ -61,14 +63,14 @@ class Linear(Layer):
             h = tf.matmul(inputs, self.w)
 
         # activation (non-linear operation)
-        if activation is None:
+        if self.activation is None:
             pass
-        elif activation == 'relu':
+        elif self.activation == 'relu':
             h = tf.nn.relu(features=h)
-        elif activation == 'leaky_relu':
+        elif self.activation == 'leaky_relu':
             h = tf.nn.leaky_relu(features=h)
         else:
-            raise Exception('Invalid \'activation\' argument: {}.'.format(activation))
+            raise Exception('Invalid \'activation\' argument: {}.'.format(self.activation))
 
         # dropout units
         if self.dropout_rate is not None and training:
