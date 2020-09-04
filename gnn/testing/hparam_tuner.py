@@ -12,8 +12,9 @@ if __name__ == '__main__':
     # setup
     # -------------------------------------------------------------------------
     dataset = 'cora'
-    logs_dir = '../../data/logs/gat_hparam_tuning/'
-    num_repeats = 2 # num times to repeat each trial to get uncertainty value
+    save_dir = '../../data/logs/save_model_test/'
+    num_repeats = 0 # num times to repeat each trial to get uncertainty value
+    save_model = True # whether or not to save trained model after each trial
     overwrite = False # whether or not to overwrite prev saved data
     # -------------------------------------------------------------------------
     # load dataset
@@ -67,7 +68,7 @@ if __name__ == '__main__':
     HP_LAYERS_CONFIG = hp.HParam('layers_config', hp.Discrete(layers_configs))
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam'])) # adam
     HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001])) # 0.0001
-    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([200, 300])) # 200 # 300
+    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([1])) # 200 # 300
     HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True])) 
     HP_SAMPLE = hp.HParam('sample', hp.Discrete([True, False])) # True
     HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) # 35
@@ -85,7 +86,7 @@ if __name__ == '__main__':
 
     # BACKEND
     # -------------------------------------------------------------------------
-    tboard = TensorboardWriter(logs_dir, hparams, overwrite=overwrite)
+    tboard = TensorboardWriter(save_dir, hparams, save_model=save_model, overwrite=overwrite)
 
     # trial each combination of hyperparams
     num_runs = 1

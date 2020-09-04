@@ -10,10 +10,11 @@ import copy
 import json
 
 class TensorboardWriter:
-    def __init__(self, logs_dir, hparams, overwrite=False):
-        self.logs_dir = logs_dir
-        self.init_dir = self.logs_dir
+    def __init__(self, save_dir, hparams, overwrite=False, save_model=True):
+        self.save_dir = save_dir
+        self.init_dir = self.save_dir
         self.overwrite = overwrite
+        self.save_model = save_model
         self.hparams = hparams
 
         self.METRIC_TEST_ACCURACY = 'test_accuracy'
@@ -25,31 +26,31 @@ class TensorboardWriter:
 
     def _init_dir(self):
         try:
-            os.mkdir(self.logs_dir)
+            os.mkdir(self.save_dir)
         except FileNotFoundError:
-            print('Unable to create save_weight directory. Ensure that all but the last directory in the path already exist.')
+            print('Unable to create save_dir directory. Ensure that all but the last directory in the path already exist.')
             raise
         except FileExistsError:
             print('Directory already exists.')
             if self.overwrite:
                 print('Overwriting directory.')
-                shutil.rmtree(self.logs_dir[:-1])
-                os.mkdir(self.logs_dir)
+                shutil.rmtree(self.save_dir[:-1])
+                os.mkdir(self.save_dir)
             else:
                 print('Generating new directory.')
                 v = 2
-                new_path = self.logs_dir
+                new_path = self.save_dir
                 while os.path.exists(new_path):
-                    new_path = self.logs_dir[:-1] + '_v' + str(v) + '/'
+                    new_path = self.save_dir[:-1] + '_v' + str(v) + '/'
                     v += 1
-                self.logs_dir = new_path
-                os.mkdir(self.logs_dir)
-                print('New directory:\n{}'.format(self.logs_dir))
+                self.save_dir = new_path
+                os.mkdir(self.save_dir)
+                print('New directory:\n{}'.format(self.save_dir))
 
-        assert self.logs_dir[-1] == '/', \
-                'Last character of self.logs_dir must be \'/\', but is \'{}\''.format(self.logs_dir[-1])
+        assert self.save_dir[-1] == '/', \
+                'Last character of self.save_dir must be \'/\', but is \'{}\''.format(self.save_dir[-1])
 
-        with tf.summary.create_file_writer(self.logs_dir).as_default():
+        with tf.summary.create_file_writer(self.save_dir).as_default():
             hp.hparams_config(hparams=self.hparams,
                               metrics=[hp.Metric(self.METRIC_TEST_ACCURACY, display_name='Test Accuracy'),
                                        hp.Metric(self.METRIC_TEST_ACCURACY_UNCERTAINTY, display_name='Test Accuracy Uncertainty'),
@@ -158,14 +159,6 @@ class TensorboardWriter:
             label_to_onehot = {label: onehot for label, onehot in zip(unique_labels, unique_onehot_labels)}
             labels = tf.cast([label_to_onehot[l] for l in labels.numpy()], dtype=tf.int64) # convert to onehot
 
-            # define gnn layers (automatically add defaults to final output layers)
-            # layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
-                             # 'activations': ['relu' for _ in range(hparams[HP_NUM_LAYERS])] + [None],
-                             # 'batch_norms': [hparams[HP_BATCH_NORM] for _ in range(hparams[HP_NUM_LAYERS]+1)],
-                             # 'dropout_rates': [hparams[HP_DROPOUT_RATE] for _ in range(hparams[HP_NUM_LAYERS])] + [None]}
-            # layers_config = {'out_feats': [hparams[HP_NUM_UNITS] for _ in range(hparams[HP_NUM_LAYERS])] + [num_classes],
-                             # 'num_heads': [hparams[HP_NUM_HEADS] for _ in range(hparams[HP_NUM_LAYERS])] + [1]}
-
             # add edges between each node and itself to preserve old node representations
             g.add_edges(g.nodes(), g.nodes())
 
@@ -174,7 +167,6 @@ class TensorboardWriter:
                 opt = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LEARNING_RATE])
             else:
                 opt = tf.keras.optimizers.SGD(learning_rate=hparams[HP_LEARNING_RATE])
-
 
             # init run trackers
             all_test_accuracy = []
@@ -286,14 +278,14 @@ class TensorboardWriter:
             else:
                 uncertainty = 0
 
-            return mean_accuracy, uncertainty 
+            return model, mean_accuracy, uncertainty 
 
 
     def run(self, run_name, Model, hparams, data_dict, num_repeats=1):
         '''Trains and tests model with given hparams and tracks with tensorboard.
 
         Args:
-            run_name (str): Name of run (will be saved in self.logs_dir in a 
+            run_name (str): Name of run (will be saved in self.save_dir in a 
                 folder under this name).
             Model (obj): GNN model to train and test.
             hparams (dict): User-defined hyperparameters to use.
@@ -303,21 +295,22 @@ class TensorboardWriter:
                 accuracy value).
 
         '''
-        run_dir = self.logs_dir + run_name
+        run_dir = self.save_dir + run_name
         data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(hparams) # record hparams used in this run
-            accuracy, uncertainty = self._train_test_model(run_dir, 
-                                                           Model,
-                                                           hparams, 
-                                                           g=data_dict['graph'],
-                                                           features=data_dict['features'],
-                                                           labels=data_dict['labels'],
-                                                           train_mask=data_dict['train_mask'],
-                                                           val_mask=data_dict['val_mask'],
-                                                           test_mask=data_dict['test_mask'],
-                                                           num_repeats=num_repeats)
-
+            model, accuracy, uncertainty = self._train_test_model(run_dir, 
+                                                                  Model,
+                                                                  hparams, 
+                                                                  g=data_dict['graph'],
+                                                                  features=data_dict['features'],
+                                                                  labels=data_dict['labels'],
+                                                                  train_mask=data_dict['train_mask'],
+                                                                  val_mask=data_dict['val_mask'],
+                                                                  test_mask=data_dict['test_mask'],
+                                                                  num_repeats=num_repeats)
+        if self.save_model:
+            model.save_weights(run_dir + '/trained_model_weights', overwrite=True, save_format='tf')
         with tf.summary.create_file_writer(run_dir).as_default():
             tf.summary.scalar(self.METRIC_TEST_ACCURACY, data=accuracy, step=1)
             tf.summary.scalar(self.METRIC_TEST_ACCURACY_UNCERTAINTY, data=uncertainty, step=1)
