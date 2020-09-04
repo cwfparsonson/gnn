@@ -7,16 +7,18 @@ if __name__ == '__main__':
     import time
     import json
 
+
+    # _________________________________________________________________________
     # BASIC CONFIGURATION
-    # -------------------------------------------------------------------------
-    # setup
-    # -------------------------------------------------------------------------
+    # _________________________________________________________________________
     save_dir = '../../data/logs/dataset_loop_test/'
     num_repeats = 0 # num times to repeat each trial to get uncertainty value
     save_model = True # whether or not to save trained model after each trial
     overwrite = True # whether or not to overwrite prev saved data
 
+    # _________________________________________________________________________
     # HYPERPARAMETERS TO TRIAL
+    # _________________________________________________________________________
     # -------------------------------------------------------------------------
     # gnn layer configuration (specific to GNN), uncomment one below
     # -------------------------------------------------------------------------
@@ -72,11 +74,11 @@ if __name__ == '__main__':
                HP_SAMPLE,
                HP_BATCH_SIZE,
                HP_NUM_NEIGHBOURS]
-    # -------------------------------------------------------------------------
 
 
+    # _________________________________________________________________________
     # BACKEND
-    # -------------------------------------------------------------------------
+    # _________________________________________________________________________
     tboard = TensorboardWriter(save_dir, hparams, save_model=save_model, overwrite=overwrite)
 
     # trial each combination of hyperparams
