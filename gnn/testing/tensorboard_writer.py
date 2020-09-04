@@ -2,6 +2,7 @@ import tensorflow as tf
 import dgl
 import math
 from gnn.models.graph_conv import evaluate
+from gnn.models.tools import load_data
 from tensorboard.plugins.hparams import api as hp
 import numpy as np
 import os
@@ -62,18 +63,13 @@ class TensorboardWriter:
                           run_dir,
                           Model,
                           udf_hparams,
-                          g,
-                          features,
-                          labels,
-                          train_mask,
-                          val_mask,
-                          test_mask,
                           num_repeats=0):
         '''Runs a training loop given user-defined hyperparameters & performs test.
 
         Possible user defined hparam keys:
 
             - HP_LAYERS_CONFIG (name='layers_config') model-specific layers config dict
+            - HP_DATASET (name='dataset') dataset to train, validate and test on
             - HP_OPTIMIZER (name='optimizer')
             - HP_LEARNING_RATE (name='learning_rate')
             - HP_NUM_EPOCHS (name='num_epochs')
@@ -91,6 +87,7 @@ class TensorboardWriter:
                              'batch_norms': [False, False]}
             json_layers_config = json.dumps(layers_config) # conv to str
             HP_LAYERS_CONFIG = hp.HParam('layers_config', hp.Discrete(json_layers_config))
+            HP_DATASET = hp.HParam('dataset', hp.Discrete(['cora']))
             HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
             HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001]))
             HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([600]))
@@ -99,6 +96,7 @@ class TensorboardWriter:
             HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) 
             HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4])) # default to 0, which samples all neighbours for each hop/layer
             default_hparams = {HP_LAYERS_CONFIG: HP_LAYERS_CONFIG.domain.values[0],
+                               HP_DATASET: HP_DATASET.domain.values[0],
                                HP_OPTIMIZER: HP_OPTIMIZER.domain.values[0],
                                HP_LEARNING_RATE: HP_LEARNING_RATE.domain.values[0],
                                HP_NUM_EPOCHS: HP_NUM_EPOCHS.domain.values[0],
@@ -124,7 +122,9 @@ class TensorboardWriter:
 
             # reconfigure hyperparameters for this run
             for key in hparams:
-                if key.name == 'layers_config':
+                if key.name == 'dataset':
+                    HP_DATASET = key
+                elif key.name == 'layers_config':
                     HP_LAYERS_CONFIG = key
                 elif key.name == 'optimizer':
                     HP_OPTIMIZER = key
@@ -149,15 +149,26 @@ class TensorboardWriter:
                 mode = 'no_sampling'
             hparams[HP_LAYERS_CONFIG] = json.loads(hparams[HP_LAYERS_CONFIG]) # convert from str to dict
 
+            # load dataset
+            dataset = hparams[HP_DATASET]
+            g, features, labels, train_mask, val_mask, test_mask = load_data(dataset)
+
             # one-hot encode labels
             unique_labels = np.unique(labels)
             num_classes = len(unique_labels)
-            if num_classes != hparams[HP_LAYERS_CONFIG]['out_feats'][-1]:
-                raise Exception('Set number of units in final layer of model ({}) to number of possible classes to classify ({}).'.format(hparams[HP_LAYERS_CONFIG]['out_feats'][-1], num_classes))
             onehot_labels = tf.one_hot(indices=labels, depth=num_classes)
             unique_onehot_labels = np.unique(onehot_labels, axis=0)
             label_to_onehot = {label: onehot for label, onehot in zip(unique_labels, unique_onehot_labels)}
             labels = tf.cast([label_to_onehot[l] for l in labels.numpy()], dtype=tf.int64) # convert to onehot
+
+            # check final layer config
+            if hparams[HP_LAYERS_CONFIG]['out_feats'][-1] == 'auto':
+                # auto configure final layer num units to be num classes
+                hparams[HP_LAYERS_CONFIG]['out_feats'][-1] = num_classes
+            else:
+                if num_classes != hparams[HP_LAYERS_CONFIG]['out_feats'][-1]:
+                    raise Exception('Set number of units in final layer of model ({}) to number of possible classes to classify ({}).'.format(hparams[HP_LAYERS_CONFIG]['out_feats'][-1], num_classes))
+
 
             # add edges between each node and itself to preserve old node representations
             g.add_edges(g.nodes(), g.nodes())
@@ -281,33 +292,25 @@ class TensorboardWriter:
             return model, mean_accuracy, uncertainty 
 
 
-    def run(self, run_name, Model, hparams, data_dict, num_repeats=1):
+    def run(self, run_name, Model, hparams, num_repeats=1):
         '''Trains and tests model with given hparams and tracks with tensorboard.
 
         Args:
             run_name (str): Name of run (will be saved in self.save_dir in a 
                 folder under this name).
-            Model (obj): GNN model to train and test.
+            Model (obj): GNN model to train and test (N.B. Must be uninitialised)
             hparams (dict): User-defined hyperparameters to use.
-            data_dict (dict): Data for training, validation, and testing.
             num_repeats (int): Number of times to repeat training and testing
                 (will return the average accuracy and the uncertainty in the
                 accuracy value).
 
         '''
         run_dir = self.save_dir + run_name
-        data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(hparams) # record hparams used in this run
             model, accuracy, uncertainty = self._train_test_model(run_dir, 
                                                                   Model,
                                                                   hparams, 
-                                                                  g=data_dict['graph'],
-                                                                  features=data_dict['features'],
-                                                                  labels=data_dict['labels'],
-                                                                  train_mask=data_dict['train_mask'],
-                                                                  val_mask=data_dict['val_mask'],
-                                                                  test_mask=data_dict['test_mask'],
                                                                   num_repeats=num_repeats)
         if self.save_model:
             model.save_weights(run_dir + '/trained_model_weights', overwrite=True, save_format='tf')
