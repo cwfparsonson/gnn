@@ -12,6 +12,7 @@ import json
 class TensorboardWriter:
     def __init__(self, logs_dir, hparams, overwrite=False):
         self.logs_dir = logs_dir
+        self.init_dir = self.logs_dir
         self.overwrite = overwrite
         self.hparams = hparams
 
@@ -39,11 +40,14 @@ class TensorboardWriter:
                 v = 2
                 new_path = self.logs_dir
                 while os.path.exists(new_path):
-                    new_path = self.logs_dir + '_v' + str(v) + '/'
+                    new_path = self.logs_dir[:-1] + '_v' + str(v) + '/'
                     v += 1
                 self.logs_dir = new_path
                 os.mkdir(self.logs_dir)
                 print('New directory:\n{}'.format(self.logs_dir))
+
+        assert self.logs_dir[-1] == '/', \
+                'Last character of self.logs_dir must be \'/\', but is \'{}\''.format(self.logs_dir[-1])
 
         with tf.summary.create_file_writer(self.logs_dir).as_default():
             hp.hparams_config(hparams=self.hparams,
@@ -285,11 +289,12 @@ class TensorboardWriter:
             return mean_accuracy, uncertainty 
 
 
-    def run(self, run_dir, Model, hparams, data_dict, num_repeats=1):
+    def run(self, run_name, Model, hparams, data_dict, num_repeats=1):
         '''Trains and tests model with given hparams and tracks with tensorboard.
 
         Args:
-            run_dir (str): Directory to where to save logs + name of this run.
+            run_name (str): Name of run (will be saved in self.logs_dir in a 
+                folder under this name).
             Model (obj): GNN model to train and test.
             hparams (dict): User-defined hyperparameters to use.
             data_dict (dict): Data for training, validation, and testing.
@@ -298,6 +303,7 @@ class TensorboardWriter:
                 accuracy value).
 
         '''
+        run_dir = self.logs_dir + run_name
         data_dict = copy.deepcopy(data_dict) # ensure no overwriting of original data
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(hparams) # record hparams used in this run

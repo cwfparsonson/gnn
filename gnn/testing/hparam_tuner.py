@@ -12,7 +12,7 @@ if __name__ == '__main__':
     # setup
     # -------------------------------------------------------------------------
     dataset = 'cora'
-    logs_dir = '../../data/logs/gcn_hparam_tuning/'
+    logs_dir = '../../data/logs/gat_hparam_tuning/'
     num_repeats = 2 # num times to repeat each trial to get uncertainty value
     overwrite = False # whether or not to overwrite prev saved data
     # -------------------------------------------------------------------------
@@ -31,35 +31,35 @@ if __name__ == '__main__':
     # gnn layer configuration (specific to GNN), uncomment one below
     # -------------------------------------------------------------------------
 
-    # GCN
-    model = GCN
-    out_feats = [[64, 7]]
-    activations = activations = [['relu', None], ['leaky_relu', None]]
-    dropout_rates = [[None, None], [0.5, None]]
-    batch_norms = [[False, False]]
-    layers_configs = []
-    for o_fs in out_feats:
-        for acts in activations:
-            for drs in dropout_rates:
-                for bns in batch_norms:
-                    layers_config = {'out_feats': o_fs,
-                                     'activations': acts,
-                                     'dropout_rates': drs,
-                                     'batch_norms': bns}
-                    json_layers_config = json.dumps(layers_config) # conv to str
-                    layers_configs.append(json_layers_config)
-
-    # # GAT
-    # model = GAT
-    # out_feats = [[64, 7], [64, 64, 7], [64, 32, 7]]
-    # num_heads = [[8, 1]]
+    # # GCN
+    # model = GCN
+    # out_feats = [[64, 7]]
+    # activations = activations = [['relu', None], ['leaky_relu', None]]
+    # dropout_rates = [[None, None], [0.5, None]]
+    # batch_norms = [[False, False]]
     # layers_configs = []
     # for o_fs in out_feats:
-        # for heads in num_heads:
-            # layers_config = {'out_feats': o_fs,
-                             # 'num_heads': heads}
-            # json_layers_config = json.dumps(layers_config) # conv to str
-            # layers_configs.append(json_layers_config)
+        # for acts in activations:
+            # for drs in dropout_rates:
+                # for bns in batch_norms:
+                    # layers_config = {'out_feats': o_fs,
+                                     # 'activations': acts,
+                                     # 'dropout_rates': drs,
+                                     # 'batch_norms': bns}
+                    # json_layers_config = json.dumps(layers_config) # conv to str
+                    # layers_configs.append(json_layers_config)
+
+    # GAT
+    model = GAT
+    out_feats = [[64, 7]]
+    num_heads = [[8, 1], [10, 1]]
+    layers_configs = []
+    for o_fs in out_feats:
+        for heads in num_heads:
+            layers_config = {'out_feats': o_fs,
+                             'num_heads': heads}
+            json_layers_config = json.dumps(layers_config) # conv to str
+            layers_configs.append(json_layers_config)
 
     # -------------------------------------------------------------------------
     # general configuration
@@ -67,11 +67,11 @@ if __name__ == '__main__':
     HP_LAYERS_CONFIG = hp.HParam('layers_config', hp.Discrete(layers_configs))
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam'])) # adam
     HP_LEARNING_RATE = hp.HParam('learning_rate', hp.Discrete([0.0001])) # 0.0001
-    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([200])) # 200 # 300
+    HP_NUM_EPOCHS = hp.HParam('num_epochs', hp.Discrete([200, 300])) # 200 # 300
     HP_SHUFFLE = hp.HParam('shuffle', hp.Discrete([True])) 
-    HP_SAMPLE = hp.HParam('sample', hp.Discrete([True])) # True
+    HP_SAMPLE = hp.HParam('sample', hp.Discrete([True, False])) # True
     HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([35])) # 35
-    HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4]))  # 4
+    HP_NUM_NEIGHBOURS = hp.HParam('num_neighbours', hp.Discrete([4, 0]))  # 4
     hparams = [HP_LAYERS_CONFIG,
                HP_OPTIMIZER, 
                HP_LEARNING_RATE, 
@@ -80,9 +80,6 @@ if __name__ == '__main__':
                HP_SAMPLE,
                HP_BATCH_SIZE,
                HP_NUM_NEIGHBOURS]
-    num_runs = 1
-    for param in hparams:
-        num_runs *= len(param.domain.values)
     # -------------------------------------------------------------------------
 
 
@@ -91,6 +88,9 @@ if __name__ == '__main__':
     tboard = TensorboardWriter(logs_dir, hparams, overwrite=overwrite)
 
     # trial each combination of hyperparams
+    num_runs = 1
+    for param in hparams:
+        num_runs *= len(param.domain.values)
     session_num = 1
     started = time.time()
     for layers_config in HP_LAYERS_CONFIG.domain.values:
@@ -113,7 +113,7 @@ if __name__ == '__main__':
                                     print('Starting trial {} of {} ({} repeats)'.format(run_name, num_runs, num_repeats))
                                     start = time.time()
                                     print({h.name: hparams[h] for h in hparams})
-                                    tboard.run(logs_dir + run_name, model, hparams, data_dict, num_repeats=num_repeats)
+                                    tboard.run(run_name, model, hparams, data_dict, num_repeats=num_repeats)
                                     end = time.time()
                                     print('Finished trial in {} s'.format(end-start))
                                     session_num += 1
